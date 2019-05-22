@@ -1,0 +1,273 @@
+#include<iostream>
+#include <algorithm>
+#include <unordered_set>
+#include "tracker.h"
+#include <time.h>
+
+NearestNeighborDistanceMetric * DistanceMetric;
+
+Eigen::MatrixXf gated_metric_(vector<Track> tracks, vector<Detection> detections, vector<int> track_indices, vector<int> detection_indices)
+{
+    // cout << "enter gated_metric_ ...." << endl;
+    Eigen::MatrixXf features;
+    vector<int> targets;
+    features.resize(detection_indices.size(), detections[0].feature_.size());
+
+    for(size_t i = 0; i < detection_indices.size(); ++i)
+    {
+        int detection_idx = detection_indices[i];
+        features.row(i) = Eigen::VectorXf::Map(&(detections[detection_idx].feature_[0]), detections[detection_idx].feature_.size());
+    }
+    for(size_t i = 0; i < track_indices.size(); ++i)
+        targets.push_back(tracks[track_indices[i]].track_id_);
+
+    //get cost matrix
+    Eigen::MatrixXf cost_matrix = DistanceMetric->distance(features, targets);
+
+    //modify cost matrix
+    KalmanFilter kf;
+    cost_matrix = gate_cost_matrix(kf, cost_matrix, tracks, detections, track_indices, detection_indices);
+    return cost_matrix;
+}
+
+
+
+/*
+ * Parameters:
+ * metric: nn_matching/NearestNeighborDistanceMetric
+ *     a distance metric for measurement-to-track association
+ * max_age: int
+ *     Maximum number of missed misses before a track is deletec
+ * n_init: int
+ *     number of consecutive detections before the track is confirmed.
+ *     the track state is set to 'deleted' if a miss occures within the first 
+ *     'n_init' frame.
+ * 
+ * Atttributes:
+ * metric: nn_matching/NearestNeighborDistanceMetric
+ *     a distance metric for measurement-to-track association
+ * max_age: int
+ *     Maximum number of missed misses before a track is deletec
+ * n_init: int
+ *     number of consecutive detections before the track is confirmed.
+ *     the track state is set to 'deleted' if a miss occures within the first 
+ *     'n_init' frame.
+ * kf: kalman_filter/KalmanFilter
+ *     a kalman filter to filter target trajectories
+ * tracks: [Track]
+ *     
+ */
+Tracker::Tracker(string metric, float matching_threshold, float max_iou_distance, int max_age, int n_init)
+{
+    DistanceMetric = new NearestNeighborDistanceMetric(metric, matching_threshold, 100);
+    max_iou_distance_ = max_iou_distance;
+    max_age_ = max_age;
+    n_init_ = n_init;
+    next_id_ = 1;
+    kf_ = new KalmanFilter();
+}
+
+Tracker::~Tracker(){}
+
+void Tracker::predict()
+{
+    /*
+     * propagate track state distributions one time step forward
+     * predict should be called once every time step, before 'update'
+     */
+    for(vector<Track>::iterator it = tracks_.begin(); it != tracks_.end(); ++it)
+    {
+        it->predict(kf_);
+    }
+}
+
+void Tracker::update(vector<Detection> detections)
+{
+    /*
+     * Perform measurement update and track managment
+     * Param// enters
+     * -------
+     *  detections: vector<Detection>
+     *      a list of detections at the current time step
+     */
+
+    clock_t startTime = clock();
+    // run matching cascade
+    vector<Match> matches;
+    vector<int> unmatched_tracks, unmatched_detections;
+    match_(detections, &matches, &unmatched_tracks, &unmatched_detections);
+    cout << "match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    startTime = clock();
+
+    // update track set
+    for(vector<Match>::iterator it = matches.begin(); it != matches.end(); it++)
+        tracks_[it->track_idx].update(kf_, detections[it->detection_idx]);
+
+    for(vector<int>::iterator it = unmatched_tracks.begin(); it != unmatched_tracks.end(); it ++)
+        tracks_[*it].mark_missed();
+    for(vector<int>::iterator it = unmatched_detections.begin(); it != unmatched_detections.end(); it ++)
+        initiate_track_(detections[*it]);
+
+    // delete tracks that state is is_deleted ans extract tracks that state is confirmed
+    vector<int> targets, active_targets;
+    vector<vector<float> > features;
+
+    for(vector<Track>::iterator it = tracks_.begin(); it != tracks_.end();)
+    {
+        if(it->is_deleted())
+            it = tracks_.erase(it);
+        else
+        {
+            if(it->is_confirmed())
+            {
+                active_targets.push_back(it->track_id_);
+                for(vector<vector<float> >::iterator iit = it->features_.begin(); 
+                        iit != it->features_.end(); iit ++)
+                {
+                    features.push_back(*iit);
+                    targets.push_back(it->track_id_);
+                }
+                it->features_.clear();
+            }
+            it ++;
+        }
+    }
+
+    cout << "update_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    startTime = clock();
+    // update distance metric
+    DistanceMetric->partial_fit(features, targets, active_targets);
+    cout << "fit_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    
+}
+
+
+void Tracker::match_(vector<Detection> detections, vector<Match>* matches, 
+        vector<int>* unmatched_tracks, vector<int>* unmatched_detections)
+{
+    /* match method
+     * Paramters
+     * -----------
+     *  detections: 
+     *
+     *
+     */
+    // split track set into confirmed and unconfirmed tracks
+    vector<int> confirmed_tracks, unconfirmed_tracks, detection_indices;
+    for(size_t i = 0; i < tracks_.size(); ++ i)
+    {
+        if(tracks_[i].is_confirmed())
+            confirmed_tracks.push_back(i);
+        else
+            unconfirmed_tracks.push_back(i);
+    }
+    for(size_t i = 0; i < detections.size(); ++ i)
+    {
+        detection_indices.push_back(i);
+    }
+
+    // for(vector<Detection>::iterator it = detections.begin(); it < detections.end(); ++it)
+    // {
+    //     vector<float>tlwh = it->tlwh_;
+    //     for(vector<float>::iterator iit = tlwh.begin(); iit!= tlwh.end(); ++iit)
+    //         cout << "\t" << *iit << ",";
+    //     cout << endl;
+    // }
+    cout << "confirmed_tracks: " << confirmed_tracks.size() << "; unconfirmed_tracks: " << unconfirmed_tracks.size() << endl;
+    // associate confirmed tracks using appearance features
+    vector<Match> matches_a, matches_b;
+    vector<int> unmatched_tracks_a, unmatched_tracks_b;
+    vector<int> unmatched_detections_a;
+
+    clock_t startTime = clock();
+
+    matching_cascade(gated_metric_, DistanceMetric->matching_threshold_, max_age_,
+        tracks_, detections, &matches_a, &unmatched_tracks_a, &unmatched_detections_a,
+        confirmed_tracks, detection_indices);
+    cout << "cost_match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    startTime = clock();
+    cout << "matches_a: ";
+    for(vector<Match>::iterator it=matches_a.begin(); it != matches_a.end(); ++it)
+        cout << "(" << it->track_idx << "," << it->detection_idx << ")" ;
+    cout << endl;
+    cout << "unmatched_tracks_a: [" ;
+    for(vector<int>::iterator it=unmatched_tracks_a.begin(); it != unmatched_tracks_a.end(); ++it)
+        cout << *it << ",";
+    cout << "] " << endl;
+    cout << "unmatched_detections_a: [" ;
+    for(vector<int>::iterator it=unmatched_detections_a.begin(); it != unmatched_detections_a.end(); ++it)
+        cout << *it << ",";
+    cout << "] " << endl;
+    // associate remaining tracks together with unconfirmed tracks using IOU
+    vector<int> iou_track_candidates=unconfirmed_tracks;
+    for(vector<int>::iterator it=unmatched_tracks_a.begin(); it != unmatched_tracks_a.end();) 
+    {
+        if(tracks_[*it].time_since_update_ == 1)
+        {
+            iou_track_candidates.push_back(*it);
+            it = unmatched_tracks_a.erase(it);
+        }
+        else
+            it++;
+    }
+    cout << "iou_track_candidates: " << iou_track_candidates.size() << endl;
+    cout << "unmatched_tracks_a(erased): " << unmatched_tracks_a.size() << endl;
+
+    min_cost_matching(iou_cost, max_iou_distance_, tracks_, detections, 
+        &matches_b, &unmatched_tracks_b, unmatched_detections, 
+        iou_track_candidates, unmatched_detections_a);
+
+    cout << "iou_match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    startTime = clock();
+    cout << "matches_b: [";
+    for(vector<Match>::iterator it=matches_b.begin(); it != matches_b.end(); ++it)
+        cout << "(" << it->track_idx << "," << it->detection_idx << ")" ;
+    cout << "]" << endl;
+    cout << "unmatched_tracks_b: [" ;
+    for(vector<int>::iterator it=unmatched_tracks_b.begin(); it != unmatched_tracks_b.end(); ++it)
+        cout << *it << ",";
+    cout << "] " << endl;
+    cout << "unmatched_detections_b: [" ;
+    for(vector<int>::iterator it=unmatched_detections->begin(); it != unmatched_detections->end(); ++it)
+        cout << *it << ",";
+    cout << "] " << endl;
+
+    *matches = matches_a;
+    for(vector<Match>::iterator it=matches_b.begin(); it!=matches_b.end(); it ++)
+        matches->push_back(*it);
+    for(vector<int>::iterator it=unmatched_tracks_b.begin(); it != unmatched_tracks_b.end(); it ++)
+        unmatched_tracks_a.push_back(*it);
+    unordered_set<int> unmatched_tracks_set;
+    copy(unmatched_tracks_a.begin(), unmatched_tracks_a.end(), inserter(unmatched_tracks_set, unmatched_tracks_set.end()));
+    copy(unmatched_tracks_set.begin(), unmatched_tracks_set.end(), back_inserter(*unmatched_tracks));
+
+    cout << "final matches: ";
+    for(vector<Match>::iterator it=matches->begin(); it != matches->end(); ++it)
+        cout << "(" << it->track_idx << "," << it->detection_idx << ")" ;
+    cout << "]" <<endl;
+    cout << "final unmatched_tracks: [";
+    for(vector<int>::iterator it=unmatched_tracks->begin(); it != unmatched_tracks->end(); ++it)
+        cout << *it<< ", ";
+    cout << "]" << endl;
+    cout << "final unmatched_detections: [";
+    for(vector<int>::iterator it=unmatched_detections->begin(); it != unmatched_detections->end(); ++it)
+        cout << *it<< ", ";
+    cout << "]" << endl;
+}
+
+
+void Tracker::initiate_track_(Detection detection)
+{
+    /*
+     * initiate a track and added to tracks
+     * Parameters:
+     * ---------
+     *  detection: Detection
+     *
+     */
+    Eigen::Matrix<float, 8, 1> mean = Eigen::Matrix<float, 8, 1>::Zero();
+    Eigen::Matrix<float, 8, 8> cov = Eigen::Matrix<float, 8,8>::Zero();
+    kf_->initiate(detection.to_xyah(), &mean, &cov);
+    tracks_.push_back(Track(mean, cov, next_id_, n_init_, max_age_, detection.feature_));
+    next_id_ ++;
+}
