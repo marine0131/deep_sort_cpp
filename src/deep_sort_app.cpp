@@ -1,8 +1,45 @@
 #include <deep_sort_app.h>
 #include <cnpy.h>
+#include "nms.hpp"
 
 int DetectionIdx = 0;
-
+// vector<int> non_max_suppression(vector<vector<float> > boxes, float max_bbox_overlap, vector<float> scores)
+// {
+//     vector<int> pick;
+//     if(boxes.size() == 0)
+//         return indices;
+// 
+//     vector<float> x1, y1, x2, y2, area;
+//     for(vector<vector<float> >::iterator it = boxes.begin(); it!=boxes.end(); ++it)
+//     {
+//         x1.append((*it)[0]);
+//         y1.append((*it)[1]);
+//         float xx2 = (*it)[2] + (*it)[0];
+//         float yy2 = (*it)[3] + (*it)[1]; 
+//         x2.append(xx2);
+//         y2.append(yy2);
+//         area.append((xx2 - (*it)[0] + 1) * (yy2 - (*it)[1] + 1));
+//     }
+// 
+//     if(scores.size()>0)
+//         idxs = np.argsort(scores)
+//     else:                                                                       
+//         idxs = np.argsort(y2)                                                   
+//     while len(idxs) > 0:                                                        
+//         last = len(idxs) - 1                                                    
+//         i = idxs[last]                                                          
+//         pick.append(i)                                                          
+//         xx1 = np.maximum(x1[i], x1[idxs[:last]])                                
+//         yy1 = np.maximum(y1[i], y1[idxs[:last]])                                
+//         xx2 = np.minimum(x2[i], x2[idxs[:last]])                                
+//         yy2 = np.minimum(y2[i], y2[idxs[:last]])                                
+//         w = np.maximum(0, xx2 - xx1 + 1)                                        
+//         h = np.maximum(0, yy2 - yy1 + 1)                                        
+//         overlap = (w * h) / area[idxs[:last]]                                   
+//         idxs = np.delete(                                                       
+//             idxs, np.concatenate((([last], np.where(overlap > max_bbox_overlap)[0])))
+//          return pick
+// }
 cv::Scalar create_unique_color(int tag)
 {
     float hue_step = 0.41;
@@ -226,11 +263,29 @@ void run(Args args)
     vector<Detection> detections;
     while(frame_idx < last_idx)
     {
-        cout << "Processing " << seq_info.image_filenames.find(frame_idx)->second << "." << endl;
+        clock_t init_time=clock();
+        cout << endl << "Processing ................................" << seq_info.image_filenames.find(frame_idx)->second << "." << endl;
         // generate detections
         detections = create_detection(seq_info.detections, frame_idx, args.min_detection_height, args.min_confidence, seq_info.feature_dim);
+        cout << "generate detections time: " << (float)(clock()-init_time)/CLOCKS_PER_SEC<<endl;
 
         // run non-maxima suppression
+        vector<vector<float> > boxes;
+        vector<float> scores;
+        for(vector<Detection>::iterator it = detections.begin(); it!=detections.end(); ++it)
+        {
+            boxes.push_back(it->to_tlbr());
+            scores.push_back(it->confidence_);
+        }
+        vector<int> pick = nms(boxes, args.nms_max_overlap, scores);
+        vector<Detection> nms_detections;
+        for(vector<int>::iterator it = pick.begin(); it!=pick.end();++it)
+        {
+            nms_detections.push_back(detections[*it]);
+        }
+        detections.clear();
+        detections = nms_detections;
+        cout << "detections: "<< detections.size() <<endl;
 
         // update tracker
         clock_t startTime = clock();
@@ -256,7 +311,10 @@ void run(Args args)
             cv::Size dsize = cv::Size(1024, (int)(aspect_ratio*1024));
             cv::resize(image, image, dsize, 0, 0, cv::INTER_AREA);
             cv::imshow("image", image);
-            cv::waitKey(1);
+            float wait_time = 1/30.0f - (float)(clock()-init_time)/CLOCKS_PER_SEC ;
+            wait_time = wait_time>0.001?(int)(wait_time*1000):1;
+            cout << "waite another " << wait_time << " ms" << endl;
+            cv::waitKey(wait_time);
 
         }
         frame_idx ++;
@@ -271,6 +329,7 @@ int main(int argc, char** argv)
 {
     Args args;
     vector<string> arg_vec(argv+1, argv+argc);
+
 
     for(vector<string>::iterator it = arg_vec.begin(); it!= arg_vec.end(); ++it)
     {

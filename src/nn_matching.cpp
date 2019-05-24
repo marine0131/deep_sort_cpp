@@ -69,27 +69,12 @@ static Eigen::MatrixXf cosine_distance(Eigen::MatrixXf a, Eigen::MatrixXf b, boo
      *      returns a matrix of N*L, who's element(i,j) contains the squared distance 
      *      between a.row(i) and b.row(j)
      */
-    clock_t startTime = clock();
 
     if(!data_is_normalized)
     {
-        // Eigen::MatrixXf a2, b2;
-        // a2 = a.array().square();
-        // b2 = b.array().square();
-        //Eigen::MatrixXf na, nb;
-        // na = a.rowwise().norm();//sum().cwiseSqrt();
-        // nb = b.rowwise().norm();//sum().cwiseSqrt();
-        // cout << "cosine_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
-        // for(size_t i = 0; i < a.rows(); i++)
-        //     for(size_t j = 0 ; j < a.cols(); j ++)
-        //         a(i, j) = a(i, j)/ na(i);
-        // for(size_t i = 0; i < b.rows(); i++)
-        //     for(size_t j = 0 ; j < b.cols(); j ++)
-        //         b(i, j) = b(i, j)/ nb(i);
         a.rowwise().normalize();
         b.rowwise().normalize();
     }
-    cout << "cosine_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
     return  1.0 - (a * b.transpose()).array();
 }
 
@@ -149,11 +134,14 @@ static Eigen::MatrixXf nn_cosine_distance(Eigen::MatrixXf a, Eigen::MatrixXf b)
      */
 
     Eigen::MatrixXf distances, c;
-    distances = cosine_distance(a, b);
+    distances = cosine_distance(a, b, false);
 
     c.resize(distances.cols(),1);
     for(size_t i = 0; i < distances.cols(); i ++)
-        c(i) = distances.col(i).minCoeff();
+    {
+        float min = distances.col(i).minCoeff();
+        c(i) = min; //>0?min:0.0f;
+    }
     return c;
 }
 
@@ -195,7 +183,7 @@ NearestNeighborDistanceMetric::NearestNeighborDistanceMetric(string metric, floa
 
 NearestNeighborDistanceMetric::~NearestNeighborDistanceMetric(){};
 
-void NearestNeighborDistanceMetric::partial_fit(vector<vector<float> > features, vector<int> targets, vector<int> active_targets)
+void NearestNeighborDistanceMetric::partial_fit(vector<vector<vector<float> > > features, vector<int> targets)
 {
     /*
      * update the distance metric with new data
@@ -208,34 +196,47 @@ void NearestNeighborDistanceMetric::partial_fit(vector<vector<float> > features,
      *  active_targets: vector
      *      vector of targets that are currentlu present in the scene
      */
-    map<int, Eigen::MatrixXf>::iterator it;
+    //map<int, Eigen::MatrixXf>::iterator it;
+    map<int, vector<vector<float> > >::iterator it;
     for(size_t i = 0; i < targets.size(); i++)
     {
         it = samples_.find(targets[i]);
+        // int feat_row = features[i].rows();
+        // int feat_col = features[i].cols();
         if(it != samples_.end())
         {
             // find target index in already exist samples
-            int ind = targets[i];
-            it->second.conservativeResize(it->second.rows()+1, Eigen::NoChange);
-            it->second.row(it->second.rows()-1) = Eigen::VectorXf::Map(
-                    &features[i][0], features[i].size());
-            if(budget_ > 0 && budget_ < it->second.rows())
+            // it->second.conservativeResize(it->second.rows()+feat_row, Eigen::NoChange);
+            // it->second.block(it->second.rows()-feat_row, 0, feat_row, feat_col) = features[i];
+            // if(budget_ > 0 && budget_ < it->second.rows())
+            //     it->second = it->second.bottomRows(budget_);
+            
+            for(vector<vector<float> >::iterator iit= features[i].begin(); iit!=features[i].end(); ++iit)
+                it->second.push_back(*iit);
+            if(budget_ > 0 && budget_ < it->second.size())
             {
-                it->second = it->second.bottomRows(budget_);
+                for(size_t j = 0;j < it->second.size()-budget_; ++j)
+                {
+                    it->second.erase(it->second.begin());
+                }
             }
+
         }
         else
         {
-            Eigen::MatrixXf temp_mat = Eigen::VectorXf::Map(&features[i][0], features[i].size());
-            samples_.insert(pair<int, Eigen::MatrixXf>(targets[i],temp_mat.transpose())); 
+            // it is a new target
+            // samples_.insert(pair<int, Eigen::MatrixXf>(targets[i],features[i])); 
+            samples_.insert(pair<int, vector<vector<float> > >(targets[i],features[i])); 
         }
     }
 
-    map<int, Eigen::MatrixXf> new_samples;
-    for(size_t i = 0; i < active_targets.size(); i++)
-        new_samples[active_targets[i]] = samples_[active_targets[i]];
-
-    samples_ = new_samples;
+    for(it = samples_.begin(); it != samples_.end(); )
+    {
+        if(find(targets.begin(), targets.end(), it->first)==targets.end())
+            it = samples_.erase(it);
+        else
+            it++;
+    }
 }
 
 Eigen::MatrixXf NearestNeighborDistanceMetric::distance(Eigen::MatrixXf features, vector<int> targets)
@@ -258,6 +259,8 @@ Eigen::MatrixXf NearestNeighborDistanceMetric::distance(Eigen::MatrixXf features
     // cout << "enter NearestNeighborDistanceMetric distance...." << endl;
     Eigen::MatrixXf cost_matrix;
 
+    clock_t startTime = clock();
+
     int L = features.rows();
     int T = targets.size();
     cost_matrix.resize(T, L); 
@@ -265,9 +268,16 @@ Eigen::MatrixXf NearestNeighborDistanceMetric::distance(Eigen::MatrixXf features
     for(size_t i = 0; i < T; i ++)
     {
         Eigen::MatrixXf  c;
-        c = metric_(samples_.find(targets[i])->second, features); //samples[target[i]] N*M, features L*M, return c is L length
+        Eigen::MatrixXf target;
+        vector<vector<float> > mat = samples_.find(targets[i])->second;
+        target.resize(mat.size(), mat[0].size());
+        for(size_t i = 0; i < mat.size(); i++)
+            target.row(i)=Eigen::VectorXf::Map(&mat[i][0], mat[i].size());
+
+        c = metric_(target, features); //samples[target[i]] N*M, features L*M, return c is L length
         cost_matrix.row(i) = c.transpose();
     }
+    cout <<": nn_match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
     return cost_matrix;
 }
 

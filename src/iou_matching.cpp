@@ -112,6 +112,7 @@ Eigen::MatrixXf iou_cost(vector<Track> tracks, vector<Detection> detections, vec
         vector<float> cost_vector = iou(bbox, candidates);
         cost_matrix.row(row) = Eigen::VectorXf::Map(&cost_vector[0], cost_vector.size());
     }
+    // cout << "iou_cost_matrix " <<  cost_matrix <<endl;
     return cost_matrix;
 }
 
