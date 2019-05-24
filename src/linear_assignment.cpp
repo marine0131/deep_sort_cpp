@@ -55,11 +55,44 @@ void min_cost_matching(Metric distance_metric, float max_distance,
     AssignmentProblemSolver aps;
     size_t N = cost_matrix.rows();
     size_t M = cost_matrix.cols();
-    Eigen::MatrixXf cost_vector = cost_matrix;
+    bool transposed = false;
+    Eigen::MatrixXf cost_vector;
+    if(N>M)
+    {
+        cost_vector = cost_matrix.transpose();
+        transposed = true;
+        size_t tmp = M;
+        M = N;
+        N = tmp;
+    }
+    else
+        cost_vector = cost_matrix;
+
     cost_vector.resize(1,N*M);
     const vector<float> cost_matrix_vec(cost_vector.data(), cost_vector.data()+N*M);
     vector<int> assignment(N);
     aps.Solve(cost_matrix_vec, N, M, assignment, AssignmentProblemSolver::optimal);
+    // concatinete
+    vector<vector<int> > indices(2, vector<int>(N, -1));
+    if(transposed)
+    {
+        for(size_t i = 0; i < assignment.size(); ++i)
+        {
+            indices[1][i] = i;
+            indices[0][i] = assignment[i];
+        }
+    }
+    else
+    {
+        for(size_t i = 0; i < assignment.size(); ++i)
+        {
+            indices[0][i] = i;
+            indices[1][i] = assignment[i];
+        }
+    }
+
+    // for(size_t i = 0; i < indices[0].size(); ++i)
+    //     cout <<"assignment: " << indices[0][i] << ", " << indices[1][i] <<endl;
     
     // clear all  return matrix
     matches->clear(); 
@@ -68,43 +101,31 @@ void min_cost_matching(Metric distance_metric, float max_distance,
     // process detections not in matches
     for(size_t i = 0; i < detection_indices.size(); i++)
     {
-        // vector<int>::iterator it;
-        if(find(assignment.begin(), assignment.end(), i) == assignment.end())
+        if(find(indices[1].begin(), indices[1].end(), i) == indices[1].end())
             unmatched_detections->push_back(detection_indices[i]);
     }
-
-    size_t zero_count = count(assignment.begin(), assignment.end(), 0);
-    if(zero_count>1)
+    // process tracks not in matches
+    for(size_t i = 0; i < track_indices.size(); i++)
     {
-        vector<int>::iterator it = find(assignment.begin(), assignment.end(), 0);
-        for(size_t i = 1; i < zero_count; ++i)
-        {
-            it = find(it+1, assignment.end(), 0);
-            *it = -1;
-        }
+        if(find(indices[0].begin(), indices[0].end(), i) == indices[0].end())
+            unmatched_tracks->push_back(track_indices[i]);
     }
-
-
     // process matches and tracks not in matches and matches that has large cost
-    for(int row = 0; row < assignment.size(); row++)
+    for(int i = 0; i < indices[0].size(); ++i)
     {
-        int col = assignment[row];
-        // cout << "assignment: (" << row << "," << col << ")" << endl;
-        if(col == -1)
-            unmatched_tracks->push_back(track_indices[row]);
-        else{
-            int track_idx = track_indices[row];
-            int detection_idx = detection_indices[col];
-            if(cost_matrix(row, col) > max_distance)
-            {
-                unmatched_tracks->push_back(track_idx);
-                unmatched_detections->push_back(detection_idx);
-            }
-            else
-            {
-                Match match= {track_idx, detection_idx};
-                matches->push_back(match);
-            }
+        int row = indices[0][i];
+        int col = indices[1][i];
+        int track_idx = track_indices[row];
+        int detection_idx = detection_indices[col];
+        if(cost_matrix(row, col) > max_distance)
+        {
+            unmatched_tracks->push_back(track_idx);
+            unmatched_detections->push_back(detection_idx);
+        }
+        else
+        {
+            Match match= {track_idx, detection_idx};
+            matches->push_back(match);
         }
     }
 }
@@ -168,6 +189,11 @@ void matching_cascade(Metric distance_metric, float max_distance,
         if(track_indices_l.size() < 1) //nothing to match ath this level
             continue;
 
+        // for(vector<int>::iterator it = track_indices.begin(); it != track_indices.end(); it ++)
+        // {
+        //     cout << "track_id: " << tracks[*it].track_id_ << ",time_since_update_: " << tracks[*it].time_since_update_ <<endl;
+        // }
+        // cout << "level: " << level << " track_indices_l: " << track_indices_l.size() <<endl;
         vector<int> unmatched_tracks_l;
         vector<Match> matches_l;
         min_cost_matching(distance_metric, max_distance, tracks, detections,
@@ -257,23 +283,22 @@ Eigen::MatrixXf gate_cost_matrix(KalmanFilter kf, Eigen::MatrixXf cost_matrix,
 
 // int main(int argc, char** argv)
 // {
-//     Eigen::MatrixXf b;
-//     b.resize(8,4);
-//     b <<
-//         1,2,3,4,
-//         5,4,3,2,
-//         3,7,9,12,
-//         7,8,9,1,
-//         12,4,2,11,
-//         3,5,8,22,
-//         5,6,1,3,
-//         44,5,7,9;
+//     Eigen::MatrixXf bb;
+//     bb.resize(3,2);
+//     bb <<
+//         1,2,
+//         5,4,
+//         12,1;
 //     // b = b.array().min(10.1);
-//     cout << b <<endl;
+//     // cout << b <<endl;
 // 
 //     AssignmentProblemSolver aps;
+//     Eigen::MatrixXf b;
+//     if(bb.rows() > bb.cols())
+//         b = bb.transpose();
+// 
 //     Eigen::MatrixXf b_evec = b;
-//     b_evec.resize(1,32);
+//     b_evec.resize(1,6);
 //     const vector<float> b_vec(b_evec.data(), b_evec.data()+b_evec.rows()*b_evec.cols());
 //     vector<int> assignment;
 //     aps.Solve(b_vec, b.rows(), b.cols(), assignment, AssignmentProblemSolver::optimal);
