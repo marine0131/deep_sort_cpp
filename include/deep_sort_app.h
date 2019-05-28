@@ -52,9 +52,7 @@ struct SeqInfo{
 };
 
 cv::Scalar create_unique_color(float tag);
-void draw_detections(cv::Mat* im, vector<Detection> detections);
 vector<Detection> create_detection(vector<vector<float> > detection_mat, int frame_idx, int min_height, float min_confidence);
-vector<string> get_line(string filename);
 void gather_sequence_info(string sequence_dir, string detection_file);
 void run(Args args);
 #endif

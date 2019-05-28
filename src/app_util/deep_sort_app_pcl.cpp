@@ -1,4 +1,4 @@
-#include <deep_sort_app_pcl.h>
+#include <deep_sort_app.h>
 #include "nms.hpp"
 #include <fstream>
 #include <algorithm>
@@ -48,8 +48,21 @@ cv::Scalar create_unique_color(int tag)
             break;
     }
 }
-void draw_tracks(cv::Mat* im, vector<Track> tracks, float ratio)
+void draw_tracks(cv::Mat* im, vector<Track> tracks, float zoom,
+        vector<float> translation)
 {
+    /*
+     * draw tracks on self defined image each track has unique color and unique id
+     * Parameters:
+     * ---------
+     *  im: image
+     *  tracks: vector<Track>
+     *      current tracks
+     *  zoom: float
+     *  translation : [x, y]
+     *      these two params used for transformation from real world frame to 
+     *      image frame
+     */
     for(vector<Track>::iterator it=tracks.begin(); it!= tracks.end(); ++it)
     {
         if(!it->is_confirmed()||it->time_since_update_>0)
@@ -59,10 +72,10 @@ void draw_tracks(cv::Mat* im, vector<Track> tracks, float ratio)
         //self.viewer.rectangle(*track.to_tlwh().astype(np.int), label=str(track.track_id))
         cv::Point pt1, pt2;
         vector<float> tlwh = it->to_tlwh();
-        pt1.x = (int)(tlwh[0]*ratio);
-        pt1.y = (int)(tlwh[1]*ratio);
-        pt2.x = (int)((tlwh[0] + tlwh[2])*ratio);
-        pt2.y = (int)((tlwh[1] + tlwh[3])*ratio);
+        pt1.x = (int)(tlwh[0]*zoom + translation[0]);
+        pt1.y = (int)(tlwh[1]*zoom + translation[1]);
+        pt2.x = (int)((tlwh[0] + tlwh[2])*zoom + translation[0]);
+        pt2.y = (int)((tlwh[1] + tlwh[3])*zoom + translation[1]);
         cv::rectangle(*im, pt1, pt2, color, 2);
 
         string label = to_string(it->track_id_);
@@ -78,15 +91,28 @@ void draw_tracks(cv::Mat* im, vector<Track> tracks, float ratio)
     }
 }
 
-void draw_detections(cv::Mat* im, vector<Detection> detections, float ratio)
+void draw_detections(cv::Mat* im, vector<Detection> detections, float zoom,
+        vector<float> translation)
 {
+    /*
+     * draw detections on self defined image detections are all white color
+     * Parameters:
+     * ---------
+     *  im: image
+     *  detections: vector<detection>
+     *      current detections
+     *  zoom: float
+     *  translation : [x, y]
+     *      these two params used for transformation from real world frame to 
+     *      image frame
+     */
     for(vector<Detection>::iterator it = detections.begin(); it != detections.end(); ++it)
     {
         cv::Point pt1, pt2;
-        pt1.x = (int)(it->tlwh_[0]*ratio);
-        pt1.y = (int)(it->tlwh_[1]*ratio);
-        pt2.x = (int)((it->tlwh_[0]+it->tlwh_[2])*ratio);
-        pt2.y = (int)((it->tlwh_[1]+it->tlwh_[3])*ratio);
+        pt1.x = (int)(it->tlwh_[0]*zoom + translation[0]);
+        pt1.y = (int)(it->tlwh_[1]*zoom + translation[1]);
+        pt2.x = (int)((it->tlwh_[0]+it->tlwh_[2])*zoom + translation[0]);
+        pt2.y = (int)((it->tlwh_[1]+it->tlwh_[3])*zoom + translation[1]);
 
         cout << "draw detection: (" << pt1.x<<","<<pt1.y<<") ("<< pt2.x << ", " << pt2.y<< ")" << endl;
 
@@ -169,10 +195,6 @@ void gather_sequence_info(SeqInfo* seq_info, string sequence_dir, string detecti
      *  info: struct
      */
 
-    seq_info->sequence_name = sequence_dir;
-
-    seq_info->image_file = sequence_dir+"/blank.jpg";
-
     if(detection_file == "")
     {
         cout << "error: need detection file, exiting..." << endl;
@@ -184,11 +206,6 @@ void gather_sequence_info(SeqInfo* seq_info, string sequence_dir, string detecti
     cout << "detection shape: (" << seq_info->detections.size()  << ", "<< seq_info->detections[0].size() << ")"<< endl;
 
     seq_info->groundtruth = "";
-    
-    cv::Mat im = cv::imread(seq_info->image_file, CV_LOAD_IMAGE_COLOR);
-    seq_info->image_size.push_back(im.cols);
-    seq_info->image_size.push_back(im.rows);
-    cout <<  "image_size: " << im.cols << ", " << im.rows << endl;
 
     seq_info->min_frame_idx = (*(seq_info->detections.begin()))[0];
     seq_info->max_frame_idx = (*(seq_info->detections.end()-1))[0];
@@ -249,24 +266,22 @@ void run(Args args)
 
         if(args.display)
         {
-            // update visualization
-            cv::Mat image = cv::imread(seq_info.image_file, CV_LOAD_IMAGE_COLOR);
-
+            vector<float> tlbr = {0, 0, 1.5, 2.4};
+            // read blank image 
+            cv::Mat im(600, 800, CV_8UC3, cv::Scalar(0,0,0));
             //draw detections
-            // float ratio = seq_info.image_size[0] / detection_area[0];
-            float ratio = seq_info.image_size[0] / 4.0;
-            draw_detections(&image, detections, ratio);
-            cout << "draw detection time: " <<  (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
-            startTime = clock();
+            float zoom_x = 800.0 / (1.2*(tlbr[2]-tlbr[0]));
+            float zoom_y = 600.0 / (1.2*(tlbr[3]-tlbr[1]));
+            float zoom = zoom_x>zoom_y?zoom_y:zoom_x;
+            vector<float> translation(2,0.0);
+            translation[0] = 400 - (tlbr[2]+tlbr[0])/2.0*zoom;
+            translation[1] = 300 - (tlbr[3]+tlbr[1])/2.0*zoom;
+            draw_detections(&im, detections, zoom, translation);
 
             //draw tracks
-            draw_tracks(&image, tracker.tracks_, ratio);
-            cout << "draw track time: " <<  (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
-            startTime = clock();
+            draw_tracks(&im, tracker.tracks_, zoom, translation);
 
-            // resize
-            cv::imshow("image", image);
-            cout << "draw image time: " <<  (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+            cv::imshow("image", im);
 
             float wait_time = seq_info.update_ms - (float)(clock()-init_time)/CLOCKS_PER_SEC*1000 ;
             wait_time = wait_time>1?(int)(wait_time):1;
