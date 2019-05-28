@@ -5,11 +5,10 @@
 #include "track.h"
 #include "detection.h"
 #include "hungarian_alg.h"
+#include "nn_matching.h"
 
-#define INFTY_COST 1e5f
 
-typedef Eigen::MatrixXf (*Metric)(vector<Track>, vector<Detection>, vector<int>,
-        vector<int>);
+typedef Eigen::MatrixXf (*Metric)(NNDistanceMetric*, vector<Track>, vector<Detection>, vector<int>, vector<int>);
 
 typedef struct Match_struct
 {
@@ -17,24 +16,17 @@ typedef struct Match_struct
     int detection_idx;
 }Match;
 
-void min_cost_matching(Metric distance_metric, float max_distance, 
-        vector<Track> tracks, vector<Detection> detections, 
-        vector<Match>* matches, vector<int>* unmatched_tracks,
-        vector<int>* unmatched_detections, 
-        vector<int> track_indices,
-        vector<int> detection_indices);
+void min_cost_matching(NNDistanceMetric*, Metric distance_metric, float max_distance, 
+        vector<Track> tracks, vector<Detection> detections, vector<Match>* matches, 
+        vector<int>* unmatched_tracks, vector<int>* unmatched_detections, 
+        vector<int> track_indices, vector<int> detection_indices);
 
-void matching_cascade(Metric distance_metric, float max_distance, int cascade_depth, 
-        vector<Track> tracks, vector<Detection> detections, 
+void matching_cascade(NNDistanceMetric*, Metric distance_metric, float max_distance, 
+        int cascade_depth, vector<Track> tracks, vector<Detection> detections, 
         vector<Match>* matches, vector<int>* unmatched_tracks, 
-        vector<int>* unmatched_detections, 
-        vector<int> track_indices, 
+        vector<int>* unmatched_detections, vector<int> track_indices, 
         vector<int> detection_indices);
 
-Eigen::MatrixXf gate_cost_matrix(KalmanFilter kf, Eigen::MatrixXf cost_matrix, 
-        vector<Track> tracks, vector<Detection> detections, 
-        vector<int> track_indices, vector<int> detection_indices, 
-        float gated_cost=INFTY_COST, bool only_position=false);
 
 
 #endif

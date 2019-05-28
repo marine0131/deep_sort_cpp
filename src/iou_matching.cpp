@@ -53,7 +53,7 @@ vector<float> iou(vector<float> bbox, vector<vector<float> > candidates)
     return iou_ratio;
 }
 
-Eigen::MatrixXf iou_cost(vector<Track> tracks, vector<Detection> detections, vector<int> track_indices, vector<int> detection_indices)
+Eigen::MatrixXf iou_cost(NNDistanceMetric* distance_metric,vector<Track> tracks, vector<Detection> detections, vector<int> track_indices, vector<int> detection_indices)
 {
     /*  cost matrix calculated by iou
      *

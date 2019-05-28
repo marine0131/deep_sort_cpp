@@ -2,39 +2,14 @@
 #include <algorithm>
 #include <unordered_set>
 #include "tracker.h"
+#include "iou_matching.h"
 #include <time.h>
 
-NearestNeighborDistanceMetric * DistanceMetric;
-
-Eigen::MatrixXf gated_metric_(vector<Track> tracks, vector<Detection> detections, vector<int> track_indices, vector<int> detection_indices)
-{
-    // cout << "enter gated_metric_ ...." << endl;
-    Eigen::MatrixXf features;
-    vector<int> targets;
-    features.resize(detection_indices.size(), detections[0].feature_.size());
-
-    for(size_t i = 0; i < detection_indices.size(); ++i)
-    {
-        int detection_idx = detection_indices[i];
-        features.row(i) = Eigen::VectorXf::Map(&(detections[detection_idx].feature_[0]), detections[detection_idx].feature_.size());
-    }
-    for(size_t i = 0; i < track_indices.size(); ++i)
-        targets.push_back(tracks[track_indices[i]].track_id_);
-
-    //get cost matrix
-    Eigen::MatrixXf cost_matrix = DistanceMetric->distance(features, targets);
-
-    //modify cost matrix
-    KalmanFilter kf;
-    cost_matrix = gate_cost_matrix(kf, cost_matrix, tracks, detections, track_indices, detection_indices);
-    return cost_matrix;
-}
-
-
+// NNDistanceMetric * DistanceMetric;
 
 /*
  * Parameters:
- * metric: nn_matching/NearestNeighborDistanceMetric
+ * metric: nn_matching/NNDistanceMetric
  *     a distance metric for measurement-to-track association
  * max_age: int
  *     Maximum number of missed misses before a track is deletec
@@ -44,7 +19,7 @@ Eigen::MatrixXf gated_metric_(vector<Track> tracks, vector<Detection> detections
  *     'n_init' frame.
  * 
  * Atttributes:
- * metric: nn_matching/NearestNeighborDistanceMetric
+ * metric: nn_matching/NNDistanceMetric
  *     a distance metric for measurement-to-track association
  * max_age: int
  *     Maximum number of missed misses before a track is deletec
@@ -57,14 +32,16 @@ Eigen::MatrixXf gated_metric_(vector<Track> tracks, vector<Detection> detections
  * tracks: [Track]
  *     
  */
-Tracker::Tracker(string metric, float matching_threshold, float max_iou_distance, int max_age, int n_init)
+Tracker::Tracker(string metric, float max_nn_distance, float max_iou_distance, int max_age, int n_init, int nn_budget)
 {
-    DistanceMetric = new NearestNeighborDistanceMetric(metric, matching_threshold, 100);
     max_iou_distance_ = max_iou_distance;
+    max_nn_distance_ = max_nn_distance;
     max_age_ = max_age;
     n_init_ = n_init;
     next_id_ = 1;
     kf_ = new KalmanFilter();
+
+    distance_metric_ = new NNDistanceMetric(metric, nn_budget);
 }
 
 Tracker::~Tracker(){}
@@ -146,7 +123,7 @@ void Tracker::update(vector<Detection> detections)
     cout << "update_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
     startTime = clock();
     // update distance metric
-    DistanceMetric->partial_fit(features, targets);
+    distance_metric_->partial_fit(features, targets);
     cout << "fit_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
     
 }
@@ -196,9 +173,10 @@ void Tracker::match_(vector<Detection> detections, vector<Match>* matches,
 
     clock_t startTime = clock();
 
-    matching_cascade(gated_metric_, DistanceMetric->matching_threshold_, max_age_,
-        tracks_, detections, &matches_a, &unmatched_tracks_a, &unmatched_detections_a,
-        confirmed_tracks, detection_indices);
+    matching_cascade(distance_metric_, nn_cost, max_nn_distance_, max_age_, 
+            tracks_, detections, &matches_a, &unmatched_tracks_a, 
+            &unmatched_detections_a, confirmed_tracks, detection_indices);
+
     cout << "cost_match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
     startTime = clock();
     // cout << "matches_a: ";
@@ -228,9 +206,9 @@ void Tracker::match_(vector<Detection> detections, vector<Match>* matches,
     // cout << "iou_track_candidates: " << iou_track_candidates.size() << endl;
     // cout << "unmatched_tracks_a(erased): " << unmatched_tracks_a.size() << endl;
 
-    min_cost_matching(iou_cost, max_iou_distance_, tracks_, detections, 
-        &matches_b, &unmatched_tracks_b, unmatched_detections, 
-        iou_track_candidates, unmatched_detections_a);
+    min_cost_matching(distance_metric_, iou_cost, max_iou_distance_, tracks_, 
+            detections, &matches_b, &unmatched_tracks_b, unmatched_detections, 
+            iou_track_candidates, unmatched_detections_a);
 
     cout << "iou_match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
     startTime = clock();

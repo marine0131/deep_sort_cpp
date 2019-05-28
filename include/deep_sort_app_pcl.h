@@ -1,5 +1,5 @@
-#ifndef DEEP_SORT_APP_H
-#define DEEP_SORT_APP_H 
+#ifndef DEEP_SORT_APP_PCL_H
+#define DEEP_SORT_APP_PCL_H 
 
 #include <string>
 #include <map>
@@ -41,7 +41,7 @@ struct Args{
 
 struct SeqInfo{
     string sequence_name;
-    map<int, string> image_filenames;
+    string image_file;
     vector<vector<float> > detections;
     string groundtruth;
     vector<int> image_size;
@@ -52,9 +52,7 @@ struct SeqInfo{
 };
 
 cv::Scalar create_unique_color(float tag);
-void draw_detections(cv::Mat* im, vector<Detection> detections);
 vector<Detection> create_detection(vector<vector<float> > detection_mat, int frame_idx, int min_height, float min_confidence);
-vector<string> get_line(string filename);
 void gather_sequence_info(string sequence_dir, string detection_file);
 void run(Args args);
 #endif

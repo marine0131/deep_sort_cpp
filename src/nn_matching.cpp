@@ -153,8 +153,6 @@ static Eigen::MatrixXf nn_cosine_distance(Eigen::MatrixXf a, Eigen::MatrixXf b)
  * --------
  *  metric: string
  *      "euclidean" or "cosine"
- *  matching_threshold: float
- *      samples with larger distance are considered an invalid match
  *  budget: optional [int] default=-1
  *      if not None, fix samples per class to at most this number. Removes the oldest samples when the budget is reached
  *
@@ -165,7 +163,7 @@ static Eigen::MatrixXf nn_cosine_distance(Eigen::MatrixXf a, Eigen::MatrixXf b)
  *
  */
 
-NearestNeighborDistanceMetric::NearestNeighborDistanceMetric(string metric, float matching_threshold, int budget)
+NNDistanceMetric::NNDistanceMetric(string metric, int budget)
 {
     if(metric == "euclidean")
         metric_ = nn_euclidean_distance;
@@ -177,13 +175,12 @@ NearestNeighborDistanceMetric::NearestNeighborDistanceMetric(string metric, floa
         exit(-1);
     }
 
-    matching_threshold_ = matching_threshold;
     budget_ = budget;
 }
 
-NearestNeighborDistanceMetric::~NearestNeighborDistanceMetric(){};
+NNDistanceMetric::~NNDistanceMetric(){};
 
-void NearestNeighborDistanceMetric::partial_fit(vector<vector<vector<float> > > features, vector<int> targets)
+void NNDistanceMetric::partial_fit(vector<vector<vector<float> > > features, vector<int> targets)
 {
     /*
      * update the distance metric with new data
@@ -239,7 +236,8 @@ void NearestNeighborDistanceMetric::partial_fit(vector<vector<vector<float> > > 
     }
 }
 
-Eigen::MatrixXf NearestNeighborDistanceMetric::distance(Eigen::MatrixXf features, vector<int> targets)
+Eigen::MatrixXf NNDistanceMetric::distance(Eigen::MatrixXf features, 
+        vector<int> targets)
 {
     /*
      * compute distance features and targets
@@ -256,7 +254,7 @@ Eigen::MatrixXf NearestNeighborDistanceMetric::distance(Eigen::MatrixXf features
      *  cost_matrix: T * L matrix
      *      element(i,j) contains the closest squared distance between 'targets[i]'(already exist target) and 'features[j]'(current detected target)
      */
-    // cout << "enter NearestNeighborDistanceMetric distance...." << endl;
+    // cout << "enter NNDistanceMetric distance...." << endl;
     Eigen::MatrixXf cost_matrix;
 
     clock_t startTime = clock();
@@ -278,6 +276,97 @@ Eigen::MatrixXf NearestNeighborDistanceMetric::distance(Eigen::MatrixXf features
         cost_matrix.row(i) = c.transpose();
     }
     cout <<": nn_match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    return cost_matrix;
+}
+
+
+Eigen::MatrixXf NNDistanceMetric::gate_cost_matrix(KalmanFilter kf, 
+        Eigen::MatrixXf cost_matrix, vector<Track> tracks, 
+        vector<Detection> detections, vector<int> track_indices, 
+        vector<int> detection_indices, float gated_cost, bool only_position)
+{
+    /*
+     * invalidate infeasible entries in cost matrix based on the state distribution
+     * obtained by kalman filter
+     *
+     * Parameters:
+     * ----------
+     *  kf: KalmanFilter
+     *  cost_matrix: MatrixXf
+     *      the N*M dimensional cost matrix, where N is the bumber of track indices
+     *      and M is the number of detection indices
+     *  tracks: vector<Track>
+     *      vector of Track at current time step
+     *  detections: vector<Detection>
+     *      vector of detections at current time step
+     *  track_indices: vector<int>
+     *      vector of track indices that maps rows in 'cost_matrix' to tracks in
+     *      'tracks'
+     *  detection_indices: vector<int>
+     *      vector of detection indices that maps cols in 'cost_matrix' to detections
+     *      int 'detections'
+     *  gated_cost: Optional[float]
+     *      Entries in the cost matrix corresponding to indeasible association are
+     *      set this value. defaults to a very large value
+     *  only_position: Optional[bool]
+     *      if true, only x, y of state distribution is considered, Default to false
+     *
+     *  Returns:
+     *  -------
+     *  cost_matrix:
+     *      modified cost matrix
+     */
+
+    int gating_dim = 4;
+    if(only_position)
+        gating_dim = 2;
+
+    float gating_threshold = chi2inv95[gating_dim];
+
+    Eigen::MatrixXf measurements;
+    measurements.resize(detection_indices.size(), 4);
+    for(size_t i = 0; i < detection_indices.size(); ++i)
+    {
+        vector<float> tmp = detections[detection_indices[i]].to_xyah();
+        measurements.row(i) = Eigen::VectorXf::Map(&tmp[0], tmp.size());
+    }
+
+    Eigen::VectorXf gating_distance_;
+    for(size_t i = 0; i < track_indices.size(); ++i)
+    {
+        Track track = tracks[track_indices[i]];
+        gating_distance_ = kf.gating_distance(track.mean_, track.cov_, measurements, only_position);
+
+        for(size_t j = 0; j < gating_distance_.size(); j++)
+            if(gating_distance_(j) > gating_threshold) 
+                cost_matrix(i, j) = gated_cost;
+    }
+    return cost_matrix;
+}
+
+
+
+Eigen::MatrixXf nn_cost(NNDistanceMetric* distance_metric, vector<Track> tracks, vector<Detection> detections, vector<int> track_indices, vector<int> detection_indices)
+{
+    // cout << "enter gated_metric_ ...." << endl;
+    Eigen::MatrixXf features;
+    vector<int> targets;
+    features.resize(detection_indices.size(), detections[0].feature_.size());
+
+    for(size_t i = 0; i < detection_indices.size(); ++i)
+    {
+        int detection_idx = detection_indices[i];
+        features.row(i) = Eigen::VectorXf::Map(&(detections[detection_idx].feature_[0]), detections[detection_idx].feature_.size());
+    }
+    for(size_t i = 0; i < track_indices.size(); ++i)
+        targets.push_back(tracks[track_indices[i]].track_id_);
+
+    //get cost matrix
+    Eigen::MatrixXf cost_matrix = distance_metric->distance(features, targets);
+
+    //modify cost matrix
+    KalmanFilter kf;
+    cost_matrix = distance_metric->gate_cost_matrix(kf, cost_matrix, tracks, detections, track_indices, detection_indices);
     return cost_matrix;
 }
 
@@ -305,7 +394,7 @@ Eigen::MatrixXf NearestNeighborDistanceMetric::distance(Eigen::MatrixXf features
 //     
 // 
 //     // partial_fit.........
-//     NearestNeighborDistanceMetric nn("euclidean", 1, 2);
+//     NNDistanceMetric nn("euclidean", 1, 2);
 //     Eigen::MatrixXf features;
 //     features.resize(3,4);
 //     features <<

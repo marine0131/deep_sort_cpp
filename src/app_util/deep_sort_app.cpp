@@ -257,7 +257,7 @@ void run(Args args)
 
     // NearestNeighborDistanceMetric metric("cosine", args.max_cosine_distance, args.nn_budget);
     string metric = "cosine";
-    Tracker tracker(metric, args.max_cosine_distance);
+    Tracker tracker(metric, args.max_cosine_distance, args.max_iou_distance, 30, 3, args.nn_budget);
     int frame_idx = seq_info.min_frame_idx;
     int last_idx = seq_info.max_frame_idx;
     vector<Detection> detections;
