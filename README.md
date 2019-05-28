@@ -19,8 +19,7 @@ use pcl result replace image, track the object in point cloud
 ```
     
     ./deep_sort_app_pcl \
-        --sequence_dir=../MOT16-12 \
-        --detection_file=../MOT16-12/detections.txt \
+        --detection_file=../data/detections.txt \
         --min_confidence=0.6 \
         --min_detection_height=0.1 \ 
         --nn_budget=100 \
