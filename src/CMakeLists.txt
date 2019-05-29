@@ -25,25 +25,33 @@ ADD_LIBRARY(hungarian_alg hungarian_alg.cpp)
 TARGET_LINK_LIBRARIES(hungarian_alg
     )
 
-ADD_LIBRARY(linear_assignment linear_assignment.cpp)                               
-TARGET_LINK_LIBRARIES(linear_assignment
-    track
-    hungarian_alg
-    )
 
 ADD_LIBRARY(nn_matching nn_matching.cpp)                               
 TARGET_LINK_LIBRARIES(nn_matching
+    track
     )
 
 ADD_LIBRARY(iou_matching iou_matching.cpp)
 TARGET_LINK_LIBRARIES(iou_matching
-    track)
+    track
+    )
+
+ADD_LIBRARY(matching_metric matching_metric.cpp)                               
+TARGET_LINK_LIBRARIES(matching_metric
+    nn_matching
+    iou_matching
+    )
+
+ADD_LIBRARY(linear_assignment linear_assignment.cpp)                               
+TARGET_LINK_LIBRARIES(linear_assignment
+    hungarian_alg
+    matching_metric
+    )
 
 ADD_LIBRARY(tracker tracker.cpp)
 TARGET_LINK_LIBRARIES(tracker
     linear_assignment
-    nn_matching
-    iou_matching)
+    )
 
 ADD_LIBRARY(nms nms.cpp)
 TARGET_LINK_LIBRARIES(nms
@@ -67,8 +75,8 @@ TARGET_LINK_LIBRARIES(deep_sort_app_pcl
     ${OpenCV_LIBS}
     )
 
-ADD_EXECUTABLE(deep_sort_test app_util/deep_sort_test.cpp)
-TARGET_LINK_LIBRARIES(deep_sort_test
+ADD_EXECUTABLE(deep_sort app_util/deep_sort.cpp)
+TARGET_LINK_LIBRARIES(deep_sort
     tracker
     detection
     nms

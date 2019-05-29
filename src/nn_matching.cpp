@@ -2,6 +2,11 @@
 #include <iostream>
 #include <cmath>
 
+static Eigen::MatrixXf pdist(Eigen::MatrixXf a, Eigen::MatrixXf b);
+static Eigen::MatrixXf cosine_distance(Eigen::MatrixXf a, Eigen::MatrixXf b, bool data_is_normalized=false);
+static Eigen::MatrixXf nn_euclidean_distance(Eigen::MatrixXf a, Eigen::MatrixXf b);
+static Eigen::MatrixXf nn_cosine_distance(Eigen::MatrixXf a, Eigen::MatrixXf b);
+
 static Eigen::MatrixXf pdist(Eigen::MatrixXf a, Eigen::MatrixXf b)
 {
     /*
@@ -146,98 +151,8 @@ static Eigen::MatrixXf nn_cosine_distance(Eigen::MatrixXf a, Eigen::MatrixXf b)
 }
 
 
-
-/*
- * nearest neighbo distance metric, for each target, returns the closest distance to any sample that has been observed so far
- * Parameters:
- * --------
- *  metric: string
- *      "euclidean" or "cosine"
- *  budget: optional [int] default=-1
- *      if not None, fix samples per class to at most this number. Removes the oldest samples when the budget is reached
- *
- *  Attributes
- *  -------
- *  samples: Dict [int -> list[ndarray]]
- *      dict that maps from target identities to the list of samples that have been observed so far
- *
- */
-
-NNDistanceMetric::NNDistanceMetric(string metric, int budget)
-{
-    if(metric == "euclidean")
-        metric_ = nn_euclidean_distance;
-    else if(metric == "cosine")
-        metric_ = nn_cosine_distance;
-    else
-    {
-        cerr << "Invalid metric, must be either 'euclidean' or 'cosine'" << endl;
-        exit(-1);
-    }
-
-    budget_ = budget;
-}
-
-NNDistanceMetric::~NNDistanceMetric(){};
-
-void NNDistanceMetric::partial_fit(vector<vector<vector<float> > > features, vector<int> targets)
-{
-    /*
-     * update the distance metric with new data
-     * Parameters
-     * ------
-     *  features: N*M matrix
-     *      N features with dimensionality M, they are the features of targets
-     *  targets: N vector
-     *      An integer array of associated target identities
-     *  active_targets: vector
-     *      vector of targets that are currentlu present in the scene
-     */
-    //map<int, Eigen::MatrixXf>::iterator it;
-    map<int, vector<vector<float> > >::iterator it;
-    for(size_t i = 0; i < targets.size(); i++)
-    {
-        it = samples_.find(targets[i]);
-        // int feat_row = features[i].rows();
-        // int feat_col = features[i].cols();
-        if(it != samples_.end())
-        {
-            // find target index in already exist samples
-            // it->second.conservativeResize(it->second.rows()+feat_row, Eigen::NoChange);
-            // it->second.block(it->second.rows()-feat_row, 0, feat_row, feat_col) = features[i];
-            // if(budget_ > 0 && budget_ < it->second.rows())
-            //     it->second = it->second.bottomRows(budget_);
-            
-            for(vector<vector<float> >::iterator iit= features[i].begin(); iit!=features[i].end(); ++iit)
-                it->second.push_back(*iit);
-            if(budget_ > 0 && budget_ < it->second.size())
-            {
-                for(size_t j = 0;j < it->second.size()-budget_; ++j)
-                {
-                    it->second.erase(it->second.begin());
-                }
-            }
-
-        }
-        else
-        {
-            // it is a new target
-            // samples_.insert(pair<int, Eigen::MatrixXf>(targets[i],features[i])); 
-            samples_.insert(pair<int, vector<vector<float> > >(targets[i],features[i])); 
-        }
-    }
-
-    for(it = samples_.begin(); it != samples_.end(); )
-    {
-        if(find(targets.begin(), targets.end(), it->first)==targets.end())
-            it = samples_.erase(it);
-        else
-            it++;
-    }
-}
-
-Eigen::MatrixXf NNDistanceMetric::distance(Eigen::MatrixXf features, 
-        vector<int> targets)
+Eigen::MatrixXf distance(string metric, map<int, vector<vector<float> > >* samples,
+        Eigen::MatrixXf features, vector<int> targets)
 {
     /*
      * compute distance features and targets
@@ -257,30 +172,40 @@ Eigen::MatrixXf NNDistanceMetric::distance(Eigen::MatrixXf features,
     // cout << "enter NNDistanceMetric distance...." << endl;
     Eigen::MatrixXf cost_matrix;
 
-    clock_t startTime = clock();
+    // clock_t startTime = clock();
 
     int L = features.rows();
     int T = targets.size();
     cost_matrix.resize(T, L); 
 
+
+    Eigen::MatrixXf (*distance_metric)(Eigen::MatrixXf , Eigen::MatrixXf);
+    if(metric == "cosine")
+        distance_metric = nn_cosine_distance;
+    else if(metric == "euclidean")
+        distance_metric = nn_euclidean_distance;
+    else
+        exit(-1);
+
+
     for(size_t i = 0; i < T; i ++)
     {
         Eigen::MatrixXf  c;
         Eigen::MatrixXf target;
-        vector<vector<float> > mat = samples_.find(targets[i])->second;
+        vector<vector<float> > mat = samples->find(targets[i])->second;
         target.resize(mat.size(), mat[0].size());
         for(size_t i = 0; i < mat.size(); i++)
             target.row(i)=Eigen::VectorXf::Map(&mat[i][0], mat[i].size());
 
-        c = metric_(target, features); //samples[target[i]] N*M, features L*M, return c is L length
+        c = distance_metric(target, features); //samples[target[i]] N*M, features L*M, return c is L length
         cost_matrix.row(i) = c.transpose();
     }
-    cout <<": nn_match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    // cout <<": nn_match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
     return cost_matrix;
 }
 
 
-Eigen::MatrixXf NNDistanceMetric::gate_cost_matrix(KalmanFilter kf, 
+Eigen::MatrixXf gate_cost_matrix(KalmanFilter kf, 
         Eigen::MatrixXf cost_matrix, vector<Track> tracks, 
         vector<Detection> detections, vector<int> track_indices, 
         vector<int> detection_indices, float gated_cost, bool only_position)
@@ -346,7 +271,9 @@ Eigen::MatrixXf NNDistanceMetric::gate_cost_matrix(KalmanFilter kf,
 
 
 
-Eigen::MatrixXf nn_cost(NNDistanceMetric* distance_metric, vector<Track> tracks, vector<Detection> detections, vector<int> track_indices, vector<int> detection_indices)
+Eigen::MatrixXf nn_cost(string metric, map<int, vector<vector<float> > >* samples, 
+        vector<Track> tracks, vector<Detection> detections, 
+        vector<int> track_indices, vector<int> detection_indices)
 {
     // cout << "enter gated_metric_ ...." << endl;
     Eigen::MatrixXf features;
@@ -362,71 +289,11 @@ Eigen::MatrixXf nn_cost(NNDistanceMetric* distance_metric, vector<Track> tracks,
         targets.push_back(tracks[track_indices[i]].track_id_);
 
     //get cost matrix
-    Eigen::MatrixXf cost_matrix = distance_metric->distance(features, targets);
+    Eigen::MatrixXf cost_matrix = distance(metric, samples, features, targets);
 
     //modify cost matrix
     KalmanFilter kf;
-    cost_matrix = distance_metric->gate_cost_matrix(kf, cost_matrix, tracks, detections, track_indices, detection_indices);
+    cost_matrix = gate_cost_matrix(kf, cost_matrix, tracks, detections, track_indices, detection_indices);
     return cost_matrix;
 }
 
-// int main(int argc, char** argv)
-// {
-//     Eigen::MatrixXf a, b, c;
-//     a.resize(2,3);
-//     b.resize(4,3);
-//     a <<
-//         1,1,1,
-//         2,2,2;
-//     b <<
-//         3,3,3,
-//         4,4,4,
-//         5,5,5,
-//         6,6,6;
-// 
-// 
-//     // pdist(a, b, &c);
-//     // cosine_distance(a, b, &c);
-//     // nn_euclidean_distance(a, b, &c);
-//     // nn_cosine_distance(a, b, &c);
-//     // cout << c << endl;
-//     //
-//     
-// 
-//     // partial_fit.........
-//     NNDistanceMetric nn("euclidean", 1, 2);
-//     Eigen::MatrixXf features;
-//     features.resize(3,4);
-//     features <<
-//         1,2,3,4,
-//         3,4,5,6,
-//         5,6,7,8;
-//     vector<int> targets = {101,102,103};
-//     vector<int> active_targets = {101,102};
-//     nn.partial_fit(features, targets, active_targets);
-//     for (map<int,Eigen::MatrixXf>::iterator it=nn.samples_.begin(); it != nn.samples_.end(); ++it)
-//         cout << it->second << endl;
-//         cout << "\n\n"<< endl;
-// 
-//     features <<
-//         1,1,1,1,
-//         2,2,2,2,
-//         3,3,3,3;
-//     vector<int> targets1 = {101,102,103};
-//     vector<int> active_targets1 = {101,102,103};
-//     nn.partial_fit(features, targets1, active_targets1);
-//     for (map<int,Eigen::MatrixXf>::iterator it=nn.samples_.begin(); it != nn.samples_.end(); ++it)
-//         cout << it->second << "\n"<< endl;
-// 
-// 
-//     // distance..........
-//     features.resize(2,4);
-//     features <<
-//         7,7,2,4,
-//         2,1,5,6;
-//     vector<int> targets2 = {101,102,103};
-//     Eigen::MatrixXf cost_matrix;
-//     nn.distance(features, targets2, &cost_matrix);
-//     cout << cost_matrix << endl;
-//     
-// }

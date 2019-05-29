@@ -1,5 +1,5 @@
-#include "track.h"
 #include <iostream>
+#include "track.h"
 
 /*
  * single track with with state space (x, y)

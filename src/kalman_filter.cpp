@@ -1,6 +1,5 @@
 #include <iostream>
 #include "kalman_filter.h"
-#include <time.h>
 
 map<int, float> chi2inv95 = {
     {1, 3.8415},
@@ -23,7 +22,6 @@ map<int, float> chi2inv95 = {
  */
 KalmanFilter::KalmanFilter()
 {
-    int dt = 1;
     motion_mat_ = Eigen::Matrix<float, 8, 8>::Zero();
     update_mat_ = Eigen::Matrix<float, 4, 8>::Zero();
     // create kalman filter model
@@ -176,7 +174,6 @@ void KalmanFilter::update(Eigen::Matrix<float, 8, 1>* mean, Eigen::Matrix<float,
     
     Eigen::Matrix<float,8,4> kalman_gain = Eigen::Matrix<float, 8, 4>::Zero();
     Eigen::Matrix<float,4,4> projected_cov_inv = Eigen::Matrix<float, 4, 4>::Zero(); 
-    clock_t start = clock();
     projected_cov_inv = projected_cov.inverse();
     kalman_gain = (*cov) * update_mat_.transpose() * projected_cov_inv;
 

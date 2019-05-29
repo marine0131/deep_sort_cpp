@@ -1,4 +1,4 @@
-#include <deep_sort_app.h>
+#include "deep_sort_app.h"
 #include "nms.hpp"
 #include <fstream>
 #include <algorithm>
@@ -168,10 +168,8 @@ vector<vector<float> > read_file_to_vector(string filename)
     {
         for(sregex_iterator it(line.begin(), line.end(), pat_regex), end_it; it != end_it; ++it)
         {
-            cout << it->str() << " ";
             vec.push_back(stof(it->str()));
         }
-        cout << endl;
         mat.push_back(vec);
         vec.clear();
     }

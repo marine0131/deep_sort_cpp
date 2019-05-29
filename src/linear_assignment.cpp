@@ -1,8 +1,7 @@
 #include "linear_assignment.h"
-#include "hungarian_alg.h"
 #include <iostream>
 
-void min_cost_matching(NNDistanceMetric* metric, Metric distance_metric, 
+void min_cost_matching(DistanceMetric* metric, string metric_name, 
         float max_distance, vector<Track> tracks, vector<Detection> detections, 
         vector<Match>* matches, vector<int>* unmatched_tracks,
         vector<int>* unmatched_detections, vector<int> track_indices,
@@ -47,7 +46,7 @@ void min_cost_matching(NNDistanceMetric* metric, Metric distance_metric,
     }
 
     Eigen::MatrixXf cost_matrix;
-    cost_matrix = distance_metric(metric, tracks, detections, track_indices, detection_indices);
+    cost_matrix = metric->distance_metric(metric_name, tracks, detections, track_indices, detection_indices);
     cost_matrix = cost_matrix.array().min(max_distance+1e-5);
 
 
@@ -111,7 +110,7 @@ void min_cost_matching(NNDistanceMetric* metric, Metric distance_metric,
             unmatched_tracks->push_back(track_indices[i]);
     }
     // process matches and tracks not in matches and matches that has large cost
-    for(int i = 0; i < indices[0].size(); ++i)
+    for(size_t i = 0; i < indices[0].size(); ++i)
     {
         int row = indices[0][i];
         int col = indices[1][i];
@@ -130,7 +129,7 @@ void min_cost_matching(NNDistanceMetric* metric, Metric distance_metric,
     }
 }
 
-void matching_cascade(NNDistanceMetric* metric, Metric distance_metric, 
+void matching_cascade(DistanceMetric* metric, string metric_name, 
         float max_distance, int cascade_depth, vector<Track> tracks, 
         vector<Detection> detections, vector<Match>* matches, 
         vector<int>* unmatched_tracks, vector<int>* unmatched_detections, 
@@ -195,7 +194,7 @@ void matching_cascade(NNDistanceMetric* metric, Metric distance_metric,
         // cout << "level: " << level << " track_indices_l: " << track_indices_l.size() <<endl;
         vector<int> unmatched_tracks_l;
         vector<Match> matches_l;
-        min_cost_matching(metric, distance_metric, max_distance, tracks, detections,
+        min_cost_matching(metric, metric_name, max_distance, tracks, detections,
                 &matches_l, &unmatched_tracks_l, unmatched_detections, 
                 track_indices_l , *unmatched_detections);
 

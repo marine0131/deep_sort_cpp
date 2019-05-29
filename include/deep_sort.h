@@ -1,5 +1,5 @@
-#ifndef DEEP_SORT_TEST_H_
-#define DEEP_SORT_TEST_H_
+#ifndef DEEP_SORT_H_
+#define DEEP_SORT_H_
 
 #include <string>
 #include <map>
@@ -8,8 +8,6 @@
 #include "opencv2/opencv.hpp"
 #include "opencv2/highgui/highgui.hpp"
 
-#include "nn_matching.h"
-#include "detection.h"
 #include "tracker.h"
 
 using namespace std;
@@ -43,7 +41,7 @@ class DeepSort
                 int nn_budget=100, float max_nn_distance=0.2, 
                 float max_iou_distance=0.7);
         ~DeepSort();
-        void track(vector<float> , vector<vector<float> >);
+        vector<vector<float> > track(vector<float> , vector<vector<float> >);
 
     private:
         cv::Scalar create_unique_color(int tag);

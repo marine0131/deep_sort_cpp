@@ -1,11 +1,9 @@
-#include<iostream>
+#include <iostream>
 #include <algorithm>
 #include <unordered_set>
 #include "tracker.h"
-#include "iou_matching.h"
-#include <time.h>
 
-// NNDistanceMetric * DistanceMetric;
+// DistanceMetric * DistanceMetric;
 
 /*
  * Parameters:
@@ -41,7 +39,7 @@ Tracker::Tracker(string metric, float max_nn_distance, float max_iou_distance, i
     next_id_ = 1;
     kf_ = new KalmanFilter();
 
-    distance_metric_ = new NNDistanceMetric(metric, nn_budget);
+    distance_metric_ = new DistanceMetric(nn_budget);
 }
 
 Tracker::~Tracker(){}
@@ -73,7 +71,7 @@ void Tracker::update(vector<Detection> detections)
     vector<Match> matches;
     vector<int> unmatched_tracks, unmatched_detections;
     match_(detections, &matches, &unmatched_tracks, &unmatched_detections);
-    cout << "match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    // cout << "match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
     startTime = clock();
 
     // for(vector<Track>::iterator it = tracks_.begin(); it != tracks_.end(); it ++)
@@ -120,11 +118,11 @@ void Tracker::update(vector<Detection> detections)
         }
     }
 
-    cout << "update_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    // cout << "update_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
     startTime = clock();
     // update distance metric
     distance_metric_->partial_fit(features, targets);
-    cout << "fit_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    // cout << "fit_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
     
 }
 
@@ -153,32 +151,22 @@ void Tracker::match_(vector<Detection> detections, vector<Match>* matches,
         detection_indices.push_back(i);
     }
 
-    // for(vector<Detection>::iterator it = detections.begin(); it < detections.end(); ++it)
-    // {
-    //     vector<float>tlwh = it->tlwh_;
-    //     for(vector<float>::iterator iit = tlwh.begin(); iit!= tlwh.end(); ++iit)
-    //         cout << "\t" << *iit << ",";
-    //     cout << endl;
-    // }
-    // cout << "confirmed_tracks: " << confirmed_tracks.size() << "; unconfirmed_tracks: " << unconfirmed_tracks.size() << endl;
-    cout << "now tracks: [";
-    for(vector<Track>::iterator it = tracks_.begin(); it != tracks_.end(); ++it)
-        cout << it->track_id_ << ", ";
-    cout << "]"<<endl;
+    // cout << "now tracks: [";
+    // for(vector<Track>::iterator it = tracks_.begin(); it != tracks_.end(); ++it)
+    //     cout << it->track_id_ << ", ";
+    // cout << "]"<<endl;
 
     // associate confirmed tracks using appearance features
     vector<Match> matches_a, matches_b;
     vector<int> unmatched_tracks_a, unmatched_tracks_b;
     vector<int> unmatched_detections_a;
 
-    clock_t startTime = clock();
-
-    matching_cascade(distance_metric_, nn_cost, max_nn_distance_, max_age_, 
+    matching_cascade(distance_metric_, "cosine", max_nn_distance_, max_age_, 
             tracks_, detections, &matches_a, &unmatched_tracks_a, 
             &unmatched_detections_a, confirmed_tracks, detection_indices);
 
-    cout << "cost_match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
-    startTime = clock();
+    // cout << "cost_match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    // startTime = clock();
     // cout << "matches_a: ";
     // for(vector<Match>::iterator it=matches_a.begin(); it != matches_a.end(); ++it)
     //     cout << "(" << it->track_idx << "," << it->detection_idx << ")" ;
@@ -206,12 +194,13 @@ void Tracker::match_(vector<Detection> detections, vector<Match>* matches,
     // cout << "iou_track_candidates: " << iou_track_candidates.size() << endl;
     // cout << "unmatched_tracks_a(erased): " << unmatched_tracks_a.size() << endl;
 
-    min_cost_matching(distance_metric_, iou_cost, max_iou_distance_, tracks_, 
+    min_cost_matching(distance_metric_, "iou", max_iou_distance_, tracks_, 
             detections, &matches_b, &unmatched_tracks_b, unmatched_detections, 
             iou_track_candidates, unmatched_detections_a);
 
-    cout << "iou_match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
-    startTime = clock();
+    // cout << "iou_match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    // startTime = clock();
+    
     // cout << "matches_b: [";
     // for(vector<Match>::iterator it=matches_b.begin(); it != matches_b.end(); ++it)
     //     cout << "(" << it->track_idx << "," << it->detection_idx << ")" ;

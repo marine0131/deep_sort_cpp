@@ -8,8 +8,6 @@
 #include "opencv2/opencv.hpp"
 #include "opencv2/highgui/highgui.hpp"
 
-#include "nn_matching.h"
-#include "detection.h"
 #include "tracker.h"
 using namespace std;
 

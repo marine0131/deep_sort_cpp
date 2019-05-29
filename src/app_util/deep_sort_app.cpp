@@ -108,7 +108,7 @@ void draw_tracks(cv::Mat* im, vector<Track> tracks)
         pt2.x = pt1.x + 10 + text_size.width;
         pt2.y = pt1.y + 10 + text_size.height;
         cv::rectangle(*im, pt1, pt2, color, -1);
-        cv::putText(*im, label, center, cv::FONT_HERSHEY_PLAIN,1, (255, 255, 255), 2);
+        cv::putText(*im, label, center, cv::FONT_HERSHEY_PLAIN,1, cv::Scalar(255, 255, 255), 2);
     }
 }
 

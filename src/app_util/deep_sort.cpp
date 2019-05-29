@@ -235,7 +235,6 @@ vector<vector<float> > DeepSort::track(vector<float> tlbr, vector<vector<float> 
     // update tracker
     tracker_->update(detections);
     cout << "update time: " <<  (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
-    startTime = clock();
 
     if(args_.display)
     {
@@ -258,14 +257,26 @@ vector<vector<float> > DeepSort::track(vector<float> tlbr, vector<vector<float> 
 
         int wait_time = 100 - (float)(clock()-init_time)*1000/CLOCKS_PER_SEC;
         wait_time = wait_time>1?wait_time:1;
-        cout << "waite another " << wait_time << " ms" << endl;
         cv::waitKey(wait_time);
     }
     nms_detections.clear();
     detections.clear();
 
-    vector<vector<float> > tmp;
-    return tmp;
+    vector<vector<float> > track_box;
+    for(vector<Track>::iterator it=tracker_->tracks_.begin(); it!=tracker_->tracks_.end(); ++it)
+    {
+        if(it->is_confirmed())
+        {
+            vector<float> tmp;
+            tmp.push_back(it->track_id_);
+            vector<float> t = it->to_tlwh();
+            for(vector<float>::iterator i=t.begin(); i!=t.end(); ++i)
+                tmp.push_back(*i);
+            track_box.push_back(tmp);
+        }
+    }
+
+    return track_box;
 }
 
 
