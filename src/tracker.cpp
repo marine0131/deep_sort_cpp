@@ -66,13 +66,13 @@ void Tracker::update(vector<Detection> detections)
      *      a list of detections at the current time step
      */
 
-    clock_t startTime = clock();
+    // clock_t startTime = clock();
     // run matching cascade
     vector<Match> matches;
     vector<int> unmatched_tracks, unmatched_detections;
     match_(detections, &matches, &unmatched_tracks, &unmatched_detections);
     // cout << "match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
-    startTime = clock();
+    // startTime = clock();
 
     // for(vector<Track>::iterator it = tracks_.begin(); it != tracks_.end(); it ++)
     //     cout << "track_id(before update): " << it->track_id_ << ",time_since_update_: " << it->time_since_update_ <<endl;
@@ -103,23 +103,16 @@ void Tracker::update(vector<Detection> detections)
         {
             if(it->is_confirmed())
             {
-                // tmp_feat.resize(it->features_.size(), it->features_[0].size());
-                // for(size_t i = 0; i < it->features_.size(); ++i)
-                //{
-                    // tmp_feat.row(i) = Eigen::VectorXf::Map(
-                    //        &(it->features_[i][0]), it->features_[i].size());
-                //}
                 targets.push_back(it->track_id_);
                 features.push_back(it->features_);
                 it->features_.clear();
-                //features.push_back(tmp_feat);
             }
             it ++;
         }
     }
 
     // cout << "update_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
-    startTime = clock();
+    // startTime = clock();
     // update distance metric
     distance_metric_->partial_fit(features, targets);
     // cout << "fit_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;

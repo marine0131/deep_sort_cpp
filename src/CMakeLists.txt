@@ -82,3 +82,8 @@ TARGET_LINK_LIBRARIES(deep_sort
     nms
     ${OpenCV_LIBS}
     )
+ADD_EXECUTABLE(test1 app_util/test.cpp)
+TARGET_LINK_LIBRARIES(test1
+    nms
+    ${OpenCV_LIBS}
+    )

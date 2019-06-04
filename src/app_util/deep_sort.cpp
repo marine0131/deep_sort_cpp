@@ -265,15 +265,14 @@ vector<vector<float> > DeepSort::track(vector<float> tlbr, vector<vector<float> 
     vector<vector<float> > track_box;
     for(vector<Track>::iterator it=tracker_->tracks_.begin(); it!=tracker_->tracks_.end(); ++it)
     {
-        if(it->is_confirmed())
-        {
-            vector<float> tmp;
-            tmp.push_back(it->track_id_);
-            vector<float> t = it->to_tlwh();
-            for(vector<float>::iterator i=t.begin(); i!=t.end(); ++i)
-                tmp.push_back(*i);
-            track_box.push_back(tmp);
-        }
+        if(!it->is_confirmed()||it->time_since_update_>0)
+            continue;
+        vector<float> tmp;
+        tmp.push_back(it->track_id_);
+        vector<float> t = it->to_tlwh();
+        for(vector<float>::iterator i=t.begin(); i!=t.end(); ++i)
+            tmp.push_back(*i);
+        track_box.push_back(tmp);
     }
 
     return track_box;
