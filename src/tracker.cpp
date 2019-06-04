@@ -246,4 +246,6 @@ void Tracker::initiate_track_(Detection detection)
     tracks_.push_back(Track(mean, cov, next_id_, n_init_, max_age_, detection.feature_));
     // cout << "new track: " << next_id_ << "size: " << detection.feature_.size()<< endl;
     next_id_ ++;
+    if(next_id_ > 10000)
+        next_id_ = 1;
 }
