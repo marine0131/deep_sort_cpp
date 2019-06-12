@@ -8,8 +8,6 @@
 #include "opencv2/opencv.hpp"
 #include "opencv2/highgui/highgui.hpp"
 
-#include "nn_matching.h"
-#include "detection.h"
 #include "tracker.h"
 using namespace std;
 
@@ -21,6 +19,7 @@ struct Args{
     int min_detection_height;
     float nms_max_overlap;
     float max_cosine_distance;
+    float max_iou_distance;
     int nn_budget;
     bool display;
     Args()
@@ -32,6 +31,7 @@ struct Args{
         min_detection_height = 0;
         nms_max_overlap = 1.0;
         max_cosine_distance = 0.2;
+        max_iou_distance = 0.7;
         nn_budget = 10000;
         display = true;
     }
@@ -50,9 +50,7 @@ struct SeqInfo{
 };
 
 cv::Scalar create_unique_color(float tag);
-void draw_detections(cv::Mat* im, vector<Detection> detections);
 vector<Detection> create_detection(vector<vector<float> > detection_mat, int frame_idx, int min_height, float min_confidence);
-vector<string> get_line(string filename);
 void gather_sequence_info(string sequence_dir, string detection_file);
 void run(Args args);
 #endif

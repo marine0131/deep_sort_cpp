@@ -25,36 +25,39 @@ ADD_LIBRARY(hungarian_alg hungarian_alg.cpp)
 TARGET_LINK_LIBRARIES(hungarian_alg
     )
 
-# ADD_EXECUTABLE(linear_assignment linear_assignment.cpp)                               
-# TARGET_LINK_LIBRARIES(linear_assignment
-#     track
-#     hungarian_alg
-#     )
-ADD_LIBRARY(linear_assignment linear_assignment.cpp)                               
-TARGET_LINK_LIBRARIES(linear_assignment
-    track
-    hungarian_alg
-    )
 
 ADD_LIBRARY(nn_matching nn_matching.cpp)                               
 TARGET_LINK_LIBRARIES(nn_matching
+    track
     )
 
 ADD_LIBRARY(iou_matching iou_matching.cpp)
 TARGET_LINK_LIBRARIES(iou_matching
-    track)
+    track
+    )
+
+ADD_LIBRARY(matching_metric matching_metric.cpp)                               
+TARGET_LINK_LIBRARIES(matching_metric
+    nn_matching
+    iou_matching
+    )
+
+ADD_LIBRARY(linear_assignment linear_assignment.cpp)                               
+TARGET_LINK_LIBRARIES(linear_assignment
+    hungarian_alg
+    matching_metric
+    )
 
 ADD_LIBRARY(tracker tracker.cpp)
 TARGET_LINK_LIBRARIES(tracker
     linear_assignment
-    nn_matching
-    iou_matching)
+    )
 
 ADD_LIBRARY(nms nms.cpp)
 TARGET_LINK_LIBRARIES(nms
     )
 
-ADD_EXECUTABLE(deep_sort_app deep_sort_app.cpp)
+ADD_EXECUTABLE(deep_sort_app app_util/deep_sort_app.cpp)
 TARGET_LINK_LIBRARIES(deep_sort_app
     tracker
     detection
@@ -62,5 +65,25 @@ TARGET_LINK_LIBRARIES(deep_sort_app
     nms
     ${OpenCV_LIBS}
     )
-ADD_EXECUTABLE(test1 test.cpp)
 
+ADD_EXECUTABLE(deep_sort_app_pcl app_util/deep_sort_app_pcl.cpp)
+TARGET_LINK_LIBRARIES(deep_sort_app_pcl
+    tracker
+    detection
+    cnpy
+    nms
+    ${OpenCV_LIBS}
+    )
+
+ADD_EXECUTABLE(deep_sort app_util/deep_sort.cpp)
+TARGET_LINK_LIBRARIES(deep_sort
+    tracker
+    detection
+    nms
+    ${OpenCV_LIBS}
+    )
+ADD_EXECUTABLE(test1 app_util/test.cpp)
+TARGET_LINK_LIBRARIES(test1
+    nms
+    ${OpenCV_LIBS}
+    )

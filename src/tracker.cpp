@@ -1,40 +1,13 @@
-#include<iostream>
+#include <iostream>
 #include <algorithm>
 #include <unordered_set>
 #include "tracker.h"
-#include <time.h>
 
-NearestNeighborDistanceMetric * DistanceMetric;
-
-Eigen::MatrixXf gated_metric_(vector<Track> tracks, vector<Detection> detections, vector<int> track_indices, vector<int> detection_indices)
-{
-    // cout << "enter gated_metric_ ...." << endl;
-    Eigen::MatrixXf features;
-    vector<int> targets;
-    features.resize(detection_indices.size(), detections[0].feature_.size());
-
-    for(size_t i = 0; i < detection_indices.size(); ++i)
-    {
-        int detection_idx = detection_indices[i];
-        features.row(i) = Eigen::VectorXf::Map(&(detections[detection_idx].feature_[0]), detections[detection_idx].feature_.size());
-    }
-    for(size_t i = 0; i < track_indices.size(); ++i)
-        targets.push_back(tracks[track_indices[i]].track_id_);
-
-    //get cost matrix
-    Eigen::MatrixXf cost_matrix = DistanceMetric->distance(features, targets);
-
-    //modify cost matrix
-    KalmanFilter kf;
-    cost_matrix = gate_cost_matrix(kf, cost_matrix, tracks, detections, track_indices, detection_indices);
-    return cost_matrix;
-}
-
-
+// DistanceMetric * DistanceMetric;
 
 /*
  * Parameters:
- * metric: nn_matching/NearestNeighborDistanceMetric
+ * metric: nn_matching/NNDistanceMetric
  *     a distance metric for measurement-to-track association
  * max_age: int
  *     Maximum number of missed misses before a track is deletec
@@ -44,7 +17,7 @@ Eigen::MatrixXf gated_metric_(vector<Track> tracks, vector<Detection> detections
  *     'n_init' frame.
  * 
  * Atttributes:
- * metric: nn_matching/NearestNeighborDistanceMetric
+ * metric: nn_matching/NNDistanceMetric
  *     a distance metric for measurement-to-track association
  * max_age: int
  *     Maximum number of missed misses before a track is deletec
@@ -57,14 +30,16 @@ Eigen::MatrixXf gated_metric_(vector<Track> tracks, vector<Detection> detections
  * tracks: [Track]
  *     
  */
-Tracker::Tracker(string metric, float matching_threshold, float max_iou_distance, int max_age, int n_init)
+Tracker::Tracker(string metric, float max_nn_distance, float max_iou_distance, int max_age, int n_init, int nn_budget)
 {
-    DistanceMetric = new NearestNeighborDistanceMetric(metric, matching_threshold, 100);
     max_iou_distance_ = max_iou_distance;
+    max_nn_distance_ = max_nn_distance;
     max_age_ = max_age;
     n_init_ = n_init;
     next_id_ = 1;
     kf_ = new KalmanFilter();
+
+    distance_metric_ = new DistanceMetric(nn_budget);
 }
 
 Tracker::~Tracker(){}
@@ -91,13 +66,13 @@ void Tracker::update(vector<Detection> detections)
      *      a list of detections at the current time step
      */
 
-    clock_t startTime = clock();
+    // clock_t startTime = clock();
     // run matching cascade
     vector<Match> matches;
     vector<int> unmatched_tracks, unmatched_detections;
     match_(detections, &matches, &unmatched_tracks, &unmatched_detections);
-    cout << "match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
-    startTime = clock();
+    // cout << "match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    // startTime = clock();
 
     // for(vector<Track>::iterator it = tracks_.begin(); it != tracks_.end(); it ++)
     //     cout << "track_id(before update): " << it->track_id_ << ",time_since_update_: " << it->time_since_update_ <<endl;
@@ -128,26 +103,19 @@ void Tracker::update(vector<Detection> detections)
         {
             if(it->is_confirmed())
             {
-                // tmp_feat.resize(it->features_.size(), it->features_[0].size());
-                // for(size_t i = 0; i < it->features_.size(); ++i)
-                //{
-                    // tmp_feat.row(i) = Eigen::VectorXf::Map(
-                    //        &(it->features_[i][0]), it->features_[i].size());
-                //}
                 targets.push_back(it->track_id_);
                 features.push_back(it->features_);
                 it->features_.clear();
-                //features.push_back(tmp_feat);
             }
             it ++;
         }
     }
 
-    cout << "update_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
-    startTime = clock();
+    // cout << "update_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    // startTime = clock();
     // update distance metric
-    DistanceMetric->partial_fit(features, targets);
-    cout << "fit_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    distance_metric_->partial_fit(features, targets);
+    // cout << "fit_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
     
 }
 
@@ -176,31 +144,22 @@ void Tracker::match_(vector<Detection> detections, vector<Match>* matches,
         detection_indices.push_back(i);
     }
 
-    // for(vector<Detection>::iterator it = detections.begin(); it < detections.end(); ++it)
-    // {
-    //     vector<float>tlwh = it->tlwh_;
-    //     for(vector<float>::iterator iit = tlwh.begin(); iit!= tlwh.end(); ++iit)
-    //         cout << "\t" << *iit << ",";
-    //     cout << endl;
-    // }
-    // cout << "confirmed_tracks: " << confirmed_tracks.size() << "; unconfirmed_tracks: " << unconfirmed_tracks.size() << endl;
-    cout << "now tracks: [";
-    for(vector<Track>::iterator it = tracks_.begin(); it != tracks_.end(); ++it)
-        cout << it->track_id_ << ", ";
-    cout << "]"<<endl;
+    // cout << "now tracks: [";
+    // for(vector<Track>::iterator it = tracks_.begin(); it != tracks_.end(); ++it)
+    //     cout << it->track_id_ << ", ";
+    // cout << "]"<<endl;
 
     // associate confirmed tracks using appearance features
     vector<Match> matches_a, matches_b;
     vector<int> unmatched_tracks_a, unmatched_tracks_b;
     vector<int> unmatched_detections_a;
 
-    clock_t startTime = clock();
+    matching_cascade(distance_metric_, "cosine", max_nn_distance_, max_age_, 
+            tracks_, detections, &matches_a, &unmatched_tracks_a, 
+            &unmatched_detections_a, confirmed_tracks, detection_indices);
 
-    matching_cascade(gated_metric_, DistanceMetric->matching_threshold_, max_age_,
-        tracks_, detections, &matches_a, &unmatched_tracks_a, &unmatched_detections_a,
-        confirmed_tracks, detection_indices);
-    cout << "cost_match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
-    startTime = clock();
+    // cout << "cost_match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    // startTime = clock();
     // cout << "matches_a: ";
     // for(vector<Match>::iterator it=matches_a.begin(); it != matches_a.end(); ++it)
     //     cout << "(" << it->track_idx << "," << it->detection_idx << ")" ;
@@ -228,12 +187,13 @@ void Tracker::match_(vector<Detection> detections, vector<Match>* matches,
     // cout << "iou_track_candidates: " << iou_track_candidates.size() << endl;
     // cout << "unmatched_tracks_a(erased): " << unmatched_tracks_a.size() << endl;
 
-    min_cost_matching(iou_cost, max_iou_distance_, tracks_, detections, 
-        &matches_b, &unmatched_tracks_b, unmatched_detections, 
-        iou_track_candidates, unmatched_detections_a);
+    min_cost_matching(distance_metric_, "iou", max_iou_distance_, tracks_, 
+            detections, &matches_b, &unmatched_tracks_b, unmatched_detections, 
+            iou_track_candidates, unmatched_detections_a);
 
-    cout << "iou_match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
-    startTime = clock();
+    // cout << "iou_match_time: " << (float)(clock()-startTime)/CLOCKS_PER_SEC << endl;
+    // startTime = clock();
+    
     // cout << "matches_b: [";
     // for(vector<Match>::iterator it=matches_b.begin(); it != matches_b.end(); ++it)
     //     cout << "(" << it->track_idx << "," << it->detection_idx << ")" ;
@@ -286,4 +246,6 @@ void Tracker::initiate_track_(Detection detection)
     tracks_.push_back(Track(mean, cov, next_id_, n_init_, max_age_, detection.feature_));
     // cout << "new track: " << next_id_ << "size: " << detection.feature_.size()<< endl;
     next_id_ ++;
+    if(next_id_ > 10000)
+        next_id_ = 1;
 }

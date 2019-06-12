@@ -12,6 +12,7 @@ using namespace std;
  * (contains values for N=1,...,9)
  *
  */
+#define INFTY_COST 1e5f
 
 extern map<int, float> chi2inv95;
 class KalmanFilter

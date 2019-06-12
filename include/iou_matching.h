@@ -2,8 +2,6 @@
 #define IOU_MATCHING_H 
 
 #include <vector>
-#include "linear_assignment.h"
-#include "detection.h"
 #include "track.h"
 
 using namespace std;

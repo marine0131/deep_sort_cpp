@@ -1,45 +1,11 @@
-#include <deep_sort_app.h>
-#include <cnpy.h>
+#include "deep_sort_app.h"
 #include "nms.hpp"
+#include <fstream>
+#include <algorithm>
+#include <regex>
 
 int DetectionIdx = 0;
-// vector<int> non_max_suppression(vector<vector<float> > boxes, float max_bbox_overlap, vector<float> scores)
-// {
-//     vector<int> pick;
-//     if(boxes.size() == 0)
-//         return indices;
-// 
-//     vector<float> x1, y1, x2, y2, area;
-//     for(vector<vector<float> >::iterator it = boxes.begin(); it!=boxes.end(); ++it)
-//     {
-//         x1.append((*it)[0]);
-//         y1.append((*it)[1]);
-//         float xx2 = (*it)[2] + (*it)[0];
-//         float yy2 = (*it)[3] + (*it)[1]; 
-//         x2.append(xx2);
-//         y2.append(yy2);
-//         area.append((xx2 - (*it)[0] + 1) * (yy2 - (*it)[1] + 1));
-//     }
-// 
-//     if(scores.size()>0)
-//         idxs = np.argsort(scores)
-//     else:                                                                       
-//         idxs = np.argsort(y2)                                                   
-//     while len(idxs) > 0:                                                        
-//         last = len(idxs) - 1                                                    
-//         i = idxs[last]                                                          
-//         pick.append(i)                                                          
-//         xx1 = np.maximum(x1[i], x1[idxs[:last]])                                
-//         yy1 = np.maximum(y1[i], y1[idxs[:last]])                                
-//         xx2 = np.minimum(x2[i], x2[idxs[:last]])                                
-//         yy2 = np.minimum(y2[i], y2[idxs[:last]])                                
-//         w = np.maximum(0, xx2 - xx1 + 1)                                        
-//         h = np.maximum(0, yy2 - yy1 + 1)                                        
-//         overlap = (w * h) / area[idxs[:last]]                                   
-//         idxs = np.delete(                                                       
-//             idxs, np.concatenate((([last], np.where(overlap > max_bbox_overlap)[0])))
-//          return pick
-// }
+
 cv::Scalar create_unique_color(int tag)
 {
     float hue_step = 0.41;
@@ -82,8 +48,21 @@ cv::Scalar create_unique_color(int tag)
             break;
     }
 }
-void draw_tracks(cv::Mat* im, vector<Track> tracks)
+void draw_tracks(cv::Mat* im, vector<Track> tracks, float zoom,
+        vector<float> translation)
 {
+    /*
+     * draw tracks on self defined image each track has unique color and unique id
+     * Parameters:
+     * ---------
+     *  im: image
+     *  tracks: vector<Track>
+     *      current tracks
+     *  zoom: float
+     *  translation : [x, y]
+     *      these two params used for transformation from real world frame to 
+     *      image frame
+     */
     for(vector<Track>::iterator it=tracks.begin(); it!= tracks.end(); ++it)
     {
         if(!it->is_confirmed()||it->time_since_update_>0)
@@ -93,10 +72,10 @@ void draw_tracks(cv::Mat* im, vector<Track> tracks)
         //self.viewer.rectangle(*track.to_tlwh().astype(np.int), label=str(track.track_id))
         cv::Point pt1, pt2;
         vector<float> tlwh = it->to_tlwh();
-        pt1.x = (int)tlwh[0];
-        pt1.y = (int)tlwh[1];
-        pt2.x = (int)(tlwh[0] + tlwh[2]);
-        pt2.y = (int)(tlwh[1] + tlwh[3]);
+        pt1.x = (int)(tlwh[0]*zoom + translation[0]);
+        pt1.y = (int)(tlwh[1]*zoom + translation[1]);
+        pt2.x = (int)((tlwh[0] + tlwh[2])*zoom + translation[0]);
+        pt2.y = (int)((tlwh[1] + tlwh[3])*zoom + translation[1]);
         cv::rectangle(*im, pt1, pt2, color, 2);
 
         string label = to_string(it->track_id_);
@@ -108,20 +87,34 @@ void draw_tracks(cv::Mat* im, vector<Track> tracks)
         pt2.x = pt1.x + 10 + text_size.width;
         pt2.y = pt1.y + 10 + text_size.height;
         cv::rectangle(*im, pt1, pt2, color, -1);
-        cv::putText(*im, label, center, cv::FONT_HERSHEY_PLAIN,1, (255, 255, 255), 2);
+        cv::putText(*im, label, center, cv::FONT_HERSHEY_PLAIN,1, cv::Scalar(255, 255, 255), 2);
     }
 }
 
-void draw_detections(cv::Mat* im, vector<Detection> detections)
+void draw_detections(cv::Mat* im, vector<Detection> detections, float zoom,
+        vector<float> translation)
 {
+    /*
+     * draw detections on self defined image detections are all white color
+     * Parameters:
+     * ---------
+     *  im: image
+     *  detections: vector<detection>
+     *      current detections
+     *  zoom: float
+     *  translation : [x, y]
+     *      these two params used for transformation from real world frame to 
+     *      image frame
+     */
     for(vector<Detection>::iterator it = detections.begin(); it != detections.end(); ++it)
     {
         cv::Point pt1, pt2;
-        pt1.x = (int)it->tlwh_[0];
-        pt1.y = (int)it->tlwh_[1];
-        pt2.x = (int)(it->tlwh_[0]+it->tlwh_[2]);
-        pt2.y = (int)(it->tlwh_[1]+it->tlwh_[3]);
-        // cout << "(" << pt1.x<<","<<pt1.y<<") ("<< pt2.x << ", " << pt2.y<< ")" << endl;
+        pt1.x = (int)(it->tlwh_[0]*zoom + translation[0]);
+        pt1.y = (int)(it->tlwh_[1]*zoom + translation[1]);
+        pt2.x = (int)((it->tlwh_[0]+it->tlwh_[2])*zoom + translation[0]);
+        pt2.y = (int)((it->tlwh_[1]+it->tlwh_[3])*zoom + translation[1]);
+
+        cout << "draw detection: (" << pt1.x<<","<<pt1.y<<") ("<< pt2.x << ", " << pt2.y<< ")" << endl;
 
         cv::rectangle(*im, pt1, pt2, cv::Scalar(255, 255, 255), 2);
     }
@@ -131,8 +124,9 @@ vector<Detection> create_detection(vector<vector<float> > detection_mat, int fra
 {
     vector<Detection> detections;
 
-    // cout << "frame_id: "<< frame_idx << " DetectionIdx: " << DetectionIdx<< endl;
+    cout << "frame_id: "<< frame_idx << " DetectionIdx: " << DetectionIdx<< endl;
     size_t i = 0;
+
     for(i = DetectionIdx; i < detection_mat.size(); ++i)
     {
         if((int)detection_mat[i][0] > frame_idx)
@@ -140,10 +134,10 @@ vector<Detection> create_detection(vector<vector<float> > detection_mat, int fra
         if((int)detection_mat[i][0] == frame_idx)
         {
             vector<float> bbox(4);
-            copy(detection_mat[i].begin()+2, detection_mat[i].begin()+6, bbox.begin());
-            float confidence = detection_mat[i][6];
+            copy(detection_mat[i].begin()+1, detection_mat[i].begin()+5, bbox.begin());
+            float confidence = detection_mat[i][5];
             vector<float> feature(feature_dim);
-            copy(detection_mat[i].begin()+10, detection_mat[i].end(), feature.begin());
+            copy(detection_mat[i].begin()+6, detection_mat[i].end(), feature.begin());
             if(bbox[3] < min_height)
                 continue;
             if(confidence < min_confidence)
@@ -156,27 +150,32 @@ vector<Detection> create_detection(vector<vector<float> > detection_mat, int fra
     return detections;
 }
 
-vector<string> get_line(string filename)
-{
-    ifstream in(filename);
-    vector<string> lines;
 
-    if(!in.rdbuf()->is_open())
+vector<vector<float> > read_file_to_vector(string filename)
+{
+    ifstream is(filename);
+    if(!is)
     {
-        cout << "file " << filename << " not  exits"<<endl;
+        cout << "detections file not found!"<< endl;
         exit(1);
     }
+    regex pat_regex("\\d+(\\.\\d+)?");
 
-    string tmp;
-    while(getline(in, tmp))
+    string line;
+    vector<float> vec;
+    vector<vector<float> > mat;
+    while(getline(is, line))
     {
-        lines.push_back(tmp);
+        for(sregex_iterator it(line.begin(), line.end(), pat_regex), end_it; it != end_it; ++it)
+        {
+            vec.push_back(stof(it->str()));
+        }
+        mat.push_back(vec);
+        vec.clear();
     }
 
-    sort(lines.begin(), lines.end());
-    return lines;
+    return mat;
 }
-
 
 void gather_sequence_info(SeqInfo* seq_info, string sequence_dir, string detection_file)
 {
@@ -192,82 +191,49 @@ void gather_sequence_info(SeqInfo* seq_info, string sequence_dir, string detecti
      *  returns:
      *  --------
      *  info: struct
-     *
-     *
-     *
      */
 
-    seq_info->sequence_name = sequence_dir;
-
-    string image_dir = sequence_dir+"/img1";
-    vector<string> image_file_list = get_line(sequence_dir+"/filenames.txt");
-    for(vector<string>::iterator it = image_file_list.begin(); it != image_file_list.end(); ++it)
-    {
-        int num = stoi(it->substr(0, it->find(".")));
-        seq_info->image_filenames.insert(pair<int, string>(num, image_dir+"/"+*it));
-    }
-    // for(map<int, string>::iterator it = image_filenames.begin(); it != image_filenames.end(); ++it)
-    //     cout << it->first << ": " << it->second <<endl;
-    cout << "total image: " << seq_info->image_filenames.size() << endl;
     if(detection_file == "")
     {
         cout << "error: need detection file, exiting..." << endl;
         exit(1);
     }
-    cnpy::NpyArray arr = cnpy::npy_load(detection_file);
-    cout << "detection shape: (" << arr.shape[0]  << ", "<< arr.shape[1] << ")"<< endl;
-    cout << "detection word size: " << arr.word_size << endl;
-    double* loaded_data = arr.data<double>();
-    vector<vector<float> > detections(arr.shape[0], vector<float>(arr.shape[1], 0));
-    for(size_t i = 0; i< arr.shape[0]; ++i)
-        for(size_t j = 0; j < arr.shape[1]; ++j)
-            detections[i][j] = (float)(loaded_data[i*arr.shape[1]+j]);
-    seq_info->detections = detections;
-    //        cout << loaded_data[i*arr.shape[1]+j] << ", ";
-    //     cout << endl;
-    // }
+
+    seq_info->detections = read_file_to_vector(detection_file);
+
+    cout << "detection shape: (" << seq_info->detections.size()  << ", "<< seq_info->detections[0].size() << ")"<< endl;
+
     seq_info->groundtruth = "";
-    
-    const string im_file = seq_info->image_filenames.begin()->second;
-    cv::Mat im = cv::imread(im_file, CV_LOAD_IMAGE_COLOR);
-    seq_info->image_size.push_back(im.cols);
-    seq_info->image_size.push_back(im.rows);
-    // cv::imshow("window", im);
-    // cv::waitKey(0);
-    //
-    seq_info->min_frame_idx = seq_info->image_filenames.begin()->first;
-    seq_info->max_frame_idx = seq_info->image_filenames.end()->first;
+
+    seq_info->min_frame_idx = (*(seq_info->detections.begin()))[0];
+    seq_info->max_frame_idx = (*(seq_info->detections.end()-1))[0];
      cout << "frame_idx: " << seq_info->min_frame_idx << "~" << seq_info->max_frame_idx << endl;
     
     //string info_filename = sequence_dir + "/seqInfo.ini";
-    seq_info->update_ms = 1000/30; //hz
+    seq_info->update_ms = 1000/10.0; //hz
 
-    seq_info->feature_dim = arr.shape[1] -10;
+    seq_info->feature_dim = seq_info->detections[0].size() - 6;
     cout << "feature dim: " << seq_info->feature_dim << endl;
-
 }
-
 
 
 void run(Args args)
 {
     SeqInfo seq_info;
     gather_sequence_info(&seq_info, args.sequence_dir, args.detection_file);
-    cout <<  "image_size: " << seq_info.image_size[0] << ", " << seq_info.image_size[1] << endl;
 
-    // NearestNeighborDistanceMetric metric("cosine", args.max_cosine_distance, args.nn_budget);
     string metric = "cosine";
-    Tracker tracker(metric, args.max_cosine_distance);
+    vector<float> detection_area = {12.0, 6.0};
+    Tracker tracker(metric, args.max_cosine_distance, args.max_iou_distance, 30, 3, args.nn_budget);
     int frame_idx = seq_info.min_frame_idx;
     int last_idx = seq_info.max_frame_idx;
     vector<Detection> detections;
-    while(frame_idx < last_idx)
+    while(frame_idx <= last_idx)
     {
         clock_t init_time=clock();
-        cout << endl << "Processing ................................" << seq_info.image_filenames.find(frame_idx)->second << "." << endl;
+        cout << endl << "Processing ................................" << frame_idx << "." << endl;
         // generate detections
         detections = create_detection(seq_info.detections, frame_idx, args.min_detection_height, args.min_confidence, seq_info.feature_dim);
-        cout << "generate detections time: " << (float)(clock()-init_time)/CLOCKS_PER_SEC<<endl;
 
         // run non-maxima suppression
         vector<vector<float> > boxes;
@@ -293,26 +259,30 @@ void run(Args args)
         float predictTime = (float)(clock()-startTime)/CLOCKS_PER_SEC;
         tracker.update(detections);
         float totalTime = (float)(clock()-startTime)/CLOCKS_PER_SEC;
+        startTime = clock();
         cout << "track_use_time: " <<  totalTime << "; predict/total: "<< predictTime/totalTime << endl;
 
         if(args.display)
         {
-            // update visualization
-            cv::Mat image = cv::imread(seq_info.image_filenames.find(frame_idx)->second, CV_LOAD_IMAGE_COLOR);
-
+            vector<float> tlbr = {0, 0, 1.5, 2.4};
+            // read blank image 
+            cv::Mat im(600, 800, CV_8UC3, cv::Scalar(0,0,0));
             //draw detections
-            draw_detections(&image, detections);
+            float zoom_x = 800.0 / (1.2*(tlbr[2]-tlbr[0]));
+            float zoom_y = 600.0 / (1.2*(tlbr[3]-tlbr[1]));
+            float zoom = zoom_x>zoom_y?zoom_y:zoom_x;
+            vector<float> translation(2,0.0);
+            translation[0] = 400 - (tlbr[2]+tlbr[0])/2.0*zoom;
+            translation[1] = 300 - (tlbr[3]+tlbr[1])/2.0*zoom;
+            draw_detections(&im, detections, zoom, translation);
 
             //draw tracks
-            draw_tracks(&image, tracker.tracks_);
+            draw_tracks(&im, tracker.tracks_, zoom, translation);
 
-            // resize
-            float aspect_ratio = (float)(seq_info.image_size[1]) / (float)(seq_info.image_size[0]);
-            cv::Size dsize = cv::Size(1024, (int)(aspect_ratio*1024));
-            cv::resize(image, image, dsize, 0, 0, cv::INTER_AREA);
-            cv::imshow("image", image);
-            float wait_time = 1/30.0f - (float)(clock()-init_time)/CLOCKS_PER_SEC ;
-            wait_time = wait_time>0.001?(int)(wait_time*1000):1;
+            cv::imshow("image", im);
+
+            float wait_time = seq_info.update_ms - (float)(clock()-init_time)/CLOCKS_PER_SEC*1000 ;
+            wait_time = wait_time>1?(int)(wait_time):1;
             cout << "waite another " << wait_time << " ms" << endl;
             cv::waitKey(wait_time);
 

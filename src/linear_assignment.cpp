@@ -1,9 +1,8 @@
 #include "linear_assignment.h"
-#include "hungarian_alg.h"
 #include <iostream>
 
-void min_cost_matching(Metric distance_metric, float max_distance, 
-        vector<Track> tracks, vector<Detection> detections, 
+void min_cost_matching(DistanceMetric* metric, string metric_name, 
+        float max_distance, vector<Track> tracks, vector<Detection> detections, 
         vector<Match>* matches, vector<int>* unmatched_tracks,
         vector<int>* unmatched_detections, vector<int> track_indices,
         vector<int> detection_indices)
@@ -47,7 +46,7 @@ void min_cost_matching(Metric distance_metric, float max_distance,
     }
 
     Eigen::MatrixXf cost_matrix;
-    cost_matrix = distance_metric(tracks, detections, track_indices, detection_indices);
+    cost_matrix = metric->distance_metric(metric_name, tracks, detections, track_indices, detection_indices);
     cost_matrix = cost_matrix.array().min(max_distance+1e-5);
 
 
@@ -111,7 +110,7 @@ void min_cost_matching(Metric distance_metric, float max_distance,
             unmatched_tracks->push_back(track_indices[i]);
     }
     // process matches and tracks not in matches and matches that has large cost
-    for(int i = 0; i < indices[0].size(); ++i)
+    for(size_t i = 0; i < indices[0].size(); ++i)
     {
         int row = indices[0][i];
         int col = indices[1][i];
@@ -130,12 +129,11 @@ void min_cost_matching(Metric distance_metric, float max_distance,
     }
 }
 
-void matching_cascade(Metric distance_metric, float max_distance, 
-        int cascade_depth, 
-        vector<Track> tracks, vector<Detection> detections, 
-        vector<Match>* matches, vector<int>* unmatched_tracks, 
-        vector<int>* unmatched_detections, vector<int> track_indices, 
-        vector<int> detection_indices)
+void matching_cascade(DistanceMetric* metric, string metric_name, 
+        float max_distance, int cascade_depth, vector<Track> tracks, 
+        vector<Detection> detections, vector<Match>* matches, 
+        vector<int>* unmatched_tracks, vector<int>* unmatched_detections, 
+        vector<int> track_indices, vector<int> detection_indices)
 {
     /*
      * matching existed tracks and current detections
@@ -196,7 +194,7 @@ void matching_cascade(Metric distance_metric, float max_distance,
         // cout << "level: " << level << " track_indices_l: " << track_indices_l.size() <<endl;
         vector<int> unmatched_tracks_l;
         vector<Match> matches_l;
-        min_cost_matching(distance_metric, max_distance, tracks, detections,
+        min_cost_matching(metric, metric_name, max_distance, tracks, detections,
                 &matches_l, &unmatched_tracks_l, unmatched_detections, 
                 track_indices_l , *unmatched_detections);
 
@@ -214,70 +212,6 @@ void matching_cascade(Metric distance_metric, float max_distance,
 
 }
 
-
-Eigen::MatrixXf gate_cost_matrix(KalmanFilter kf, Eigen::MatrixXf cost_matrix, 
-        vector<Track> tracks, vector<Detection> detections, 
-        vector<int> track_indices, vector<int> detection_indices, 
-        float gated_cost, bool only_position)
-{
-    /*
-     * invalidate infeasible entries in cost matrix based on the state distribution
-     * obtained by kalman filter
-     *
-     * Parameters:
-     * ----------
-     *  kf: KalmanFilter
-     *  cost_matrix: MatrixXf
-     *      the N*M dimensional cost matrix, where N is the bumber of track indices
-     *      and M is the number of detection indices
-     *  tracks: vector<Track>
-     *      vector of Track at current time step
-     *  detections: vector<Detection>
-     *      vector of detections at current time step
-     *  track_indices: vector<int>
-     *      vector of track indices that maps rows in 'cost_matrix' to tracks in
-     *      'tracks'
-     *  detection_indices: vector<int>
-     *      vector of detection indices that maps cols in 'cost_matrix' to detections
-     *      int 'detections'
-     *  gated_cost: Optional[float]
-     *      Entries in the cost matrix corresponding to indeasible association are
-     *      set this value. defaults to a very large value
-     *  only_position: Optional[bool]
-     *      if true, only x, y of state distribution is considered, Default to false
-     *
-     *  Returns:
-     *  -------
-     *  cost_matrix:
-     *      modified cost matrix
-     */
-
-    int gating_dim = 4;
-    if(only_position)
-        gating_dim = 2;
-
-    float gating_threshold = chi2inv95[gating_dim];
-
-    Eigen::MatrixXf measurements;
-    measurements.resize(detection_indices.size(), 4);
-    for(size_t i = 0; i < detection_indices.size(); ++i)
-    {
-        vector<float> tmp = detections[detection_indices[i]].to_xyah();
-        measurements.row(i) = Eigen::VectorXf::Map(&tmp[0], tmp.size());
-    }
-
-    Eigen::VectorXf gating_distance_;
-    for(size_t i = 0; i < track_indices.size(); ++i)
-    {
-        Track track = tracks[track_indices[i]];
-        gating_distance_ = kf.gating_distance(track.mean_, track.cov_, measurements, only_position);
-
-        for(size_t j = 0; j < gating_distance_.size(); j++)
-            if(gating_distance_(j) > gating_threshold) 
-                cost_matrix(i, j) = gated_cost;
-    }
-    return cost_matrix;
-}
 
 
 
