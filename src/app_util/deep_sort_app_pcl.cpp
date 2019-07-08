@@ -333,6 +333,9 @@ int main(int argc, char** argv)
         else if(arg_string.compare("nn_budget") == 0){
             args.nn_budget = stoi(it->substr(pos+1));
         }
+        else if(arg_string.compare("max_iou_distance") == 0){
+            args.max_iou_distance= stof(it->substr(pos+1));
+        }
         else if(arg_string.compare("display") == 0){
             args.display = it->substr(pos+1)=="true";
         }

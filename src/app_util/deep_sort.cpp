@@ -272,6 +272,8 @@ vector<vector<float> > DeepSort::track(vector<float> tlbr, vector<vector<float> 
         vector<float> t = it->to_tlwh();
         for(vector<float>::iterator i=t.begin(); i!=t.end(); ++i)
             tmp.push_back(*i);
+        tmp.push_back(it->mean_(4));
+        tmp.push_back(it->mean_(5));
         track_box.push_back(tmp);
     }
 
